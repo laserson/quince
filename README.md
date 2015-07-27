@@ -26,6 +26,9 @@ export HIVE_CONF_DIR=/etc/hive/conf
 We'll start with a test file that is already in GA4GH Avro format. This was generated
 using [hpg-bigdata](https://github.com/opencb/hpg-bigdata).
 
+**Note: you can skip this step and use the small pre-converted file in the
+_datasets/variants_avro_ directory.**
+
 First convert it to Avro with no compression (deflate is not used by the Kite tools
 we'll be using later):
 
