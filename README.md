@@ -54,7 +54,7 @@ hadoop jar target/quince-0.0.1-SNAPSHOT-job.jar \
   -D mapreduce.reduce.java.opts="-Djava.net.preferIPv4Stack=true -Xmx3g" \
   -D mapreduce.map.memory.mb=4096 \
   -D mapreduce.reduce.memory.mb=4096 \
-  sample1 \
+  --sample-group sample1 \
   datasets/variants_avro \
   dataset:hdfs:datasets/variants_flat_locuspart
 ```

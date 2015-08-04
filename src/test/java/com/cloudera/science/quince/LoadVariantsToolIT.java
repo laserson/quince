@@ -4,14 +4,39 @@ import java.io.File;
 import java.io.FileFilter;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileUtil;
+import org.junit.Before;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 public class LoadVariantsToolIT {
+
+  LoadVariantsTool tool;
+
+  @Before
+  public void setUp() {
+    tool = new LoadVariantsTool();
+    Configuration conf = new Configuration();
+    tool.setConf(conf);
+  }
+
   @Test
-  public void test() throws Exception {
+  public void testMissingPaths() throws Exception {
+    int exitCode = tool.run(new String[0]);
+    assertEquals(1, exitCode);
+    // TODO: verify output
+  }
+
+  @Test
+  public void testInvalidOption() throws Exception {
+    int exitCode = tool.run(new String[]{"--invalid", "blah", "foo", "bar"});
+    assertEquals(1, exitCode);
+    // TODO: verify output
+  }
+
+  @Test
+  public void testSmallAvro() throws Exception {
 
     String baseDir = "target/datasets";
 
@@ -25,7 +50,7 @@ public class LoadVariantsToolIT {
     String input = "datasets/variants_avro";
     String output = "dataset:file:target/datasets/variants_flat_locuspart";
 
-    int exitCode = tool.run(new String[]{ sampleGroup, input, output });
+    int exitCode = tool.run(new String[]{ "--sample-group", sampleGroup, input, output });
 
     assertEquals(0, exitCode);
     File partition = new File(baseDir,

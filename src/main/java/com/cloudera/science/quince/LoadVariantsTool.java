@@ -15,7 +15,12 @@
 
 package com.cloudera.science.quince;
 
+import com.beust.jcommander.JCommander;
+import com.beust.jcommander.Parameter;
+import com.beust.jcommander.ParameterException;
+import com.beust.jcommander.Parameters;
 import java.io.IOException;
+import java.util.List;
 import org.apache.avro.Schema;
 import org.apache.avro.SchemaBuilder;
 import org.apache.avro.generic.GenericData;
@@ -49,18 +54,37 @@ import org.kitesdk.data.mapreduce.DatasetKeyOutputFormat;
  * Loads Variants stored in Avro or Parquet GA4GH format into a Hadoop filesystem,
  * ready for querying with Hive or Impala.
  */
+@Parameters(commandDescription = "Load variants tool")
 public class LoadVariantsTool extends Configured implements Tool {
+
+  @Parameter(description="<input-path> <output-path>")
+  List<String> paths;
+
+  @Parameter(names="--sample-group",
+      description="An identifier for the group of samples being loaded.")
+  String sampleGroup = "sample1";
+
+  @Parameter(names="--segment-size",
+      description="The number of base pairs in each segment partition.")
+  long segmentSize = 1000000;
 
   @Override
   public int run(String[] args) throws Exception {
-    if (args.length != 3) {
-      System.err.println("Usage: " + getClass().getSimpleName() +
-          " <sample-group> <input-path> <output-path>");
-      System.exit(1);
+    JCommander jc = new JCommander(this);
+    try {
+      jc.parse(args);
+    } catch (ParameterException e) {
+      jc.usage();
+      return 1;
     }
-    String sampleGroup = args[0];
-    String inputPath = args[1];
-    String outputPath = args[2];
+
+    if (paths == null || paths.size() != 2) {
+      jc.usage();
+      return 1;
+    }
+
+    String inputPath = paths.get(0);
+    String outputPath = paths.get(1);
 
     Configuration conf = getConf();
     // Copy records to avoid problem with Parquet string statistics not being correct.
@@ -79,7 +103,7 @@ public class LoadVariantsTool extends Configured implements Tool {
 
     DatasetDescriptor desc = new DatasetDescriptor.Builder()
         .schema(FlatVariant.getClassSchema())
-        .partitionStrategy(buildPartitionStrategy(1000000))
+        .partitionStrategy(buildPartitionStrategy(segmentSize))
         .format(Formats.PARQUET)
         .compressionType(CompressionType.Uncompressed)
         .build();
