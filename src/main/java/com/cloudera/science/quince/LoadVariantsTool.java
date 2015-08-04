@@ -13,8 +13,9 @@
  * License.
  */
 
+package com.cloudera.science.quince;
+
 import java.io.IOException;
-import java.io.InputStream;
 import org.apache.avro.Schema;
 import org.apache.avro.SchemaBuilder;
 import org.apache.avro.generic.GenericData;
@@ -43,7 +44,6 @@ import org.kitesdk.data.PartitionStrategy;
 import org.kitesdk.data.View;
 import org.kitesdk.data.crunch.CrunchDatasets;
 import org.kitesdk.data.mapreduce.DatasetKeyOutputFormat;
-import org.kitesdk.data.spi.PartitionStrategyParser;
 
 /**
  * Loads Variants stored in Avro or Parquet GA4GH format into a Hadoop filesystem,
@@ -53,15 +53,14 @@ public class LoadVariantsTool extends Configured implements Tool {
 
   @Override
   public int run(String[] args) throws Exception {
-    if (args.length != 4) {
+    if (args.length != 3) {
       System.err.println("Usage: " + getClass().getSimpleName() +
-          " <partition-strategy> <sample-group> <input-path> <output-path>");
+          " <sample-group> <input-path> <output-path>");
       System.exit(1);
     }
-    String partitionStrategyName = args[0];
-    String sampleGroup = args[1];
-    String inputPath = args[2];
-    String outputPath = args[3];
+    String sampleGroup = args[0];
+    String inputPath = args[1];
+    String outputPath = args[2];
 
     Configuration conf = getConf();
     // Copy records to avoid problem with Parquet string statistics not being correct.
@@ -80,7 +79,7 @@ public class LoadVariantsTool extends Configured implements Tool {
 
     DatasetDescriptor desc = new DatasetDescriptor.Builder()
         .schema(FlatVariant.getClassSchema())
-        .partitionStrategy(readPartitionStrategy(partitionStrategyName))
+        .partitionStrategy(buildPartitionStrategy(1000000))
         .format(Formats.PARQUET)
         .compressionType(CompressionType.Uncompressed)
         .build();
@@ -122,15 +121,12 @@ public class LoadVariantsTool extends Configured implements Tool {
     throw new IllegalStateException("Unrecognized format for " + file);
   }
 
-  static PartitionStrategy readPartitionStrategy(String name) throws IOException {
-    InputStream in = LoadVariantsTool.class.getResourceAsStream(name + ".json");
-    try {
-      return PartitionStrategyParser.parse(in);
-    } finally {
-      if (in != null) {
-        in.close();
-      }
-    }
+  static PartitionStrategy buildPartitionStrategy(long segmentSize) throws IOException {
+    return new PartitionStrategy.Builder()
+        .identity("referenceName", "chr")
+        .fixedSizeRange("start", "pos", segmentSize)
+        .provided("sample_group", "string")
+        .build();
   }
 
   private static class FlatVariantRecordMapFn extends MapFn<FlatVariant, GenericData.Record> {

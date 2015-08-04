@@ -13,6 +13,8 @@
  * License.
  */
 
+package com.cloudera.science.quince;
+
 import java.io.IOException;
 import org.apache.avro.Schema;
 import org.apache.crunch.Source;
