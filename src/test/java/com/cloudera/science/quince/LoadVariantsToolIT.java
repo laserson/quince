@@ -92,4 +92,33 @@ public class LoadVariantsToolIT {
     assertEquals(0, exitCode);
 
   }
+
+  @Test
+  public void testSmallVCF() throws Exception {
+
+    String baseDir = "target/datasets";
+
+    FileUtil.fullyDelete(new File(baseDir));
+
+    String sampleGroup = "sample1";
+    String input = "datasets/variants_vcf/small.vcf";
+    String output = "dataset:file:target/datasets/variants_flat_locuspart";
+
+    int exitCode = tool.run(new String[]{"--sample-group", sampleGroup, input, output});
+
+    assertEquals(0, exitCode);
+    File partition = new File(baseDir,
+        "variants_flat_locuspart/chr=1/pos=0/sample_group=sample1");
+    assertTrue(partition.exists());
+
+    File[] dataFiles = partition.listFiles(new FileFilter() {
+      @Override
+      public boolean accept(File pathname) {
+        return !pathname.getName().startsWith(".");
+      }
+    });
+
+    assertEquals(1, dataFiles.length);
+    assertTrue(dataFiles[0].getName().endsWith(".parquet"));
+  }
 }
