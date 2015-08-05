@@ -164,7 +164,10 @@ public class LoadVariantsTool extends Configured implements Tool {
     if (format == Formats.AVRO) {
       return From.avroFile(path, Avros.specifics(Variant.class));
     } else if (format == Formats.PARQUET) {
-      return new AvroParquetFileSource(path, Avros.specifics(Variant.class));
+      @SuppressWarnings("unchecked")
+      Source<Variant> source = new AvroParquetFileSource(path,
+          Avros.specifics(Variant.class));
+      return source;
     }
     throw new IllegalStateException("Unrecognized format for " + file);
   }
