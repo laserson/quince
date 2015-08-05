@@ -71,7 +71,12 @@ public class LoadVariantsToolIT {
     exitCode = tool.run(new String[]{ "--sample-group", sampleGroup, input, output });
     assertEquals(1, exitCode);
 
-    // while loading into a new sample group should succeed
+    // unless the overwrite option is specified
+    exitCode = tool.run(new String[]{ "--overwrite", "--sample-group", sampleGroup,
+        input, output });
+    assertEquals(0, exitCode);
+
+    // loading into a new sample group should always succeed
     exitCode = tool.run(new String[]{ "--sample-group", "sample2", input, output });
     assertEquals(0, exitCode);
 

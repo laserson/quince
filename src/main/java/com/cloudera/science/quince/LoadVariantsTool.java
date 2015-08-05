@@ -30,6 +30,7 @@ import org.apache.crunch.PCollection;
 import org.apache.crunch.Pipeline;
 import org.apache.crunch.PipelineResult;
 import org.apache.crunch.Source;
+import org.apache.crunch.Target;
 import org.apache.crunch.impl.mr.MRPipeline;
 import org.apache.crunch.io.From;
 import org.apache.crunch.io.parquet.AvroParquetFileSource;
@@ -65,6 +66,10 @@ public class LoadVariantsTool extends Configured implements Tool {
 
   @Parameter(description="<input-path> <output-path>")
   List<String> paths;
+
+  @Parameter(names="--overwrite",
+      description="Allow data for an existing sample group to be overwritten.")
+  boolean overwrite = false;
 
   @Parameter(names="--sample-group",
       description="An identifier for the group of samples being loaded.")
@@ -134,7 +139,9 @@ public class LoadVariantsTool extends Configured implements Tool {
             FlatVariantRecordMapFn(sortKeySchema), sortKeySchema, numReducers, 1);
 
     try {
-      pipeline.write(partitioned, CrunchDatasets.asTarget(dataset));
+      Target.WriteMode writeMode =
+          overwrite ? Target.WriteMode.OVERWRITE : Target.WriteMode.DEFAULT;
+      pipeline.write(partitioned, CrunchDatasets.asTarget(dataset), writeMode);
     } catch (CrunchRuntimeException e) {
       LOG.error("Crunch runtime error", e);
       return 1;
