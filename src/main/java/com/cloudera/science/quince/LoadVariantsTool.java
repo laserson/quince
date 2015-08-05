@@ -24,6 +24,7 @@ import java.util.List;
 import org.apache.avro.Schema;
 import org.apache.avro.SchemaBuilder;
 import org.apache.avro.generic.GenericData;
+import org.apache.crunch.CrunchRuntimeException;
 import org.apache.crunch.MapFn;
 import org.apache.crunch.PCollection;
 import org.apache.crunch.Pipeline;
@@ -49,6 +50,8 @@ import org.kitesdk.data.PartitionStrategy;
 import org.kitesdk.data.View;
 import org.kitesdk.data.crunch.CrunchDatasets;
 import org.kitesdk.data.mapreduce.DatasetKeyOutputFormat;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Loads Variants stored in Avro or Parquet GA4GH format into a Hadoop filesystem,
@@ -56,6 +59,9 @@ import org.kitesdk.data.mapreduce.DatasetKeyOutputFormat;
  */
 @Parameters(commandDescription = "Load variants tool")
 public class LoadVariantsTool extends Configured implements Tool {
+
+  private static final Logger LOG = LoggerFactory
+      .getLogger(LoadVariantsTool.class);
 
   @Parameter(description="<input-path> <output-path>")
   List<String> paths;
@@ -108,8 +114,14 @@ public class LoadVariantsTool extends Configured implements Tool {
         .compressionType(CompressionType.Uncompressed)
         .build();
 
-    View<FlatVariant> dataset = Datasets.create(outputPath, desc,
-        FlatVariant.class).getDataset().with("sample_group", sampleGroup);
+    View<FlatVariant> dataset;
+    if (Datasets.exists(outputPath)) {
+      dataset = Datasets.load(outputPath, FlatVariant.class)
+          .getDataset().with("sample_group", sampleGroup);
+    } else {
+      dataset = Datasets.create(outputPath, desc, FlatVariant.class)
+          .getDataset().with("sample_group", sampleGroup);
+    }
 
     int numReducers = conf.getInt("mapreduce.job.reduces", 1);
     System.out.println("Num reducers: " + numReducers);
@@ -121,7 +133,12 @@ public class LoadVariantsTool extends Configured implements Tool {
         CrunchDatasets.partitionAndSort(flatRecords, dataset, new
             FlatVariantRecordMapFn(sortKeySchema), sortKeySchema, numReducers, 1);
 
-    pipeline.write(partitioned, CrunchDatasets.asTarget(dataset));
+    try {
+      pipeline.write(partitioned, CrunchDatasets.asTarget(dataset));
+    } catch (CrunchRuntimeException e) {
+      LOG.error("Crunch runtime error", e);
+      return 1;
+    }
 
     PipelineResult result = pipeline.done();
     return result.succeeded() ? 0 : 1;

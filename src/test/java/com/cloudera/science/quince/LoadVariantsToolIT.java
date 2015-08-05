@@ -66,5 +66,14 @@ public class LoadVariantsToolIT {
 
     assertEquals(1, dataFiles.length);
     assertTrue(dataFiles[0].getName().endsWith(".parquet"));
+
+    // loading into the same sample group again should fail
+    exitCode = tool.run(new String[]{ "--sample-group", sampleGroup, input, output });
+    assertEquals(1, exitCode);
+
+    // while loading into a new sample group should succeed
+    exitCode = tool.run(new String[]{ "--sample-group", "sample2", input, output });
+    assertEquals(0, exitCode);
+
   }
 }
