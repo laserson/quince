@@ -13,16 +13,24 @@
  * License.
  */
 
+package com.cloudera.science.quince;
+
+import com.beust.jcommander.JCommander;
+import com.beust.jcommander.Parameter;
+import com.beust.jcommander.ParameterException;
+import com.beust.jcommander.Parameters;
 import java.io.IOException;
-import java.io.InputStream;
+import java.util.List;
 import org.apache.avro.Schema;
 import org.apache.avro.SchemaBuilder;
 import org.apache.avro.generic.GenericData;
+import org.apache.crunch.CrunchRuntimeException;
 import org.apache.crunch.MapFn;
 import org.apache.crunch.PCollection;
 import org.apache.crunch.Pipeline;
 import org.apache.crunch.PipelineResult;
 import org.apache.crunch.Source;
+import org.apache.crunch.Target;
 import org.apache.crunch.impl.mr.MRPipeline;
 import org.apache.crunch.io.From;
 import org.apache.crunch.io.parquet.AvroParquetFileSource;
@@ -43,25 +51,51 @@ import org.kitesdk.data.PartitionStrategy;
 import org.kitesdk.data.View;
 import org.kitesdk.data.crunch.CrunchDatasets;
 import org.kitesdk.data.mapreduce.DatasetKeyOutputFormat;
-import org.kitesdk.data.spi.PartitionStrategyParser;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Loads Variants stored in Avro or Parquet GA4GH format into a Hadoop filesystem,
  * ready for querying with Hive or Impala.
  */
+@Parameters(commandDescription = "Load variants tool")
 public class LoadVariantsTool extends Configured implements Tool {
+
+  private static final Logger LOG = LoggerFactory
+      .getLogger(LoadVariantsTool.class);
+
+  @Parameter(description="<input-path> <output-path>")
+  private List<String> paths;
+
+  @Parameter(names="--overwrite",
+      description="Allow data for an existing sample group to be overwritten.")
+  private boolean overwrite = false;
+
+  @Parameter(names="--sample-group",
+      description="An identifier for the group of samples being loaded.")
+  private String sampleGroup = "sample1";
+
+  @Parameter(names="--segment-size",
+      description="The number of base pairs in each segment partition.")
+  private long segmentSize = 1000000;
 
   @Override
   public int run(String[] args) throws Exception {
-    if (args.length != 4) {
-      System.err.println("Usage: " + getClass().getSimpleName() +
-          " <partition-strategy> <sample-group> <input-path> <output-path>");
-      System.exit(1);
+    JCommander jc = new JCommander(this);
+    try {
+      jc.parse(args);
+    } catch (ParameterException e) {
+      jc.usage();
+      return 1;
     }
-    String partitionStrategyName = args[0];
-    String sampleGroup = args[1];
-    String inputPath = args[2];
-    String outputPath = args[3];
+
+    if (paths == null || paths.size() != 2) {
+      jc.usage();
+      return 1;
+    }
+
+    String inputPath = paths.get(0);
+    String outputPath = paths.get(1);
 
     Configuration conf = getConf();
     // Copy records to avoid problem with Parquet string statistics not being correct.
@@ -80,13 +114,19 @@ public class LoadVariantsTool extends Configured implements Tool {
 
     DatasetDescriptor desc = new DatasetDescriptor.Builder()
         .schema(FlatVariant.getClassSchema())
-        .partitionStrategy(readPartitionStrategy(partitionStrategyName))
+        .partitionStrategy(buildPartitionStrategy(segmentSize))
         .format(Formats.PARQUET)
         .compressionType(CompressionType.Uncompressed)
         .build();
 
-    View<FlatVariant> dataset = Datasets.create(outputPath, desc,
-        FlatVariant.class).getDataset().with("sample_group", sampleGroup);
+    View<FlatVariant> dataset;
+    if (Datasets.exists(outputPath)) {
+      dataset = Datasets.load(outputPath, FlatVariant.class)
+          .getDataset().with("sample_group", sampleGroup);
+    } else {
+      dataset = Datasets.create(outputPath, desc, FlatVariant.class)
+          .getDataset().with("sample_group", sampleGroup);
+    }
 
     int numReducers = conf.getInt("mapreduce.job.reduces", 1);
     System.out.println("Num reducers: " + numReducers);
@@ -98,7 +138,14 @@ public class LoadVariantsTool extends Configured implements Tool {
         CrunchDatasets.partitionAndSort(flatRecords, dataset, new
             FlatVariantRecordMapFn(sortKeySchema), sortKeySchema, numReducers, 1);
 
-    pipeline.write(partitioned, CrunchDatasets.asTarget(dataset));
+    try {
+      Target.WriteMode writeMode =
+          overwrite ? Target.WriteMode.OVERWRITE : Target.WriteMode.DEFAULT;
+      pipeline.write(partitioned, CrunchDatasets.asTarget(dataset), writeMode);
+    } catch (CrunchRuntimeException e) {
+      LOG.error("Crunch runtime error", e);
+      return 1;
+    }
 
     PipelineResult result = pipeline.done();
     return result.succeeded() ? 0 : 1;
@@ -117,20 +164,20 @@ public class LoadVariantsTool extends Configured implements Tool {
     if (format == Formats.AVRO) {
       return From.avroFile(path, Avros.specifics(Variant.class));
     } else if (format == Formats.PARQUET) {
-      return new AvroParquetFileSource(path, Avros.specifics(Variant.class));
+      @SuppressWarnings("unchecked")
+      Source<Variant> source = new AvroParquetFileSource(path,
+          Avros.specifics(Variant.class));
+      return source;
     }
     throw new IllegalStateException("Unrecognized format for " + file);
   }
 
-  static PartitionStrategy readPartitionStrategy(String name) throws IOException {
-    InputStream in = LoadVariantsTool.class.getResourceAsStream(name + ".json");
-    try {
-      return PartitionStrategyParser.parse(in);
-    } finally {
-      if (in != null) {
-        in.close();
-      }
-    }
+  static PartitionStrategy buildPartitionStrategy(long segmentSize) throws IOException {
+    return new PartitionStrategy.Builder()
+        .identity("referenceName", "chr")
+        .fixedSizeRange("start", "pos", segmentSize)
+        .provided("sample_group", "string")
+        .build();
   }
 
   private static class FlatVariantRecordMapFn extends MapFn<FlatVariant, GenericData.Record> {
@@ -143,7 +190,8 @@ public class LoadVariantsTool extends Configured implements Tool {
 
     @Override
     public GenericData.Record map(FlatVariant input) {
-      GenericData.Record record = new GenericData.Record(new Schema.Parser().parse(sortKeySchemaString));
+      GenericData.Record record =
+          new GenericData.Record(new Schema.Parser().parse(sortKeySchemaString));
       record.put("sampleId", input.getCallSetId());
       return record;
     }

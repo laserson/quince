@@ -13,6 +13,8 @@
  * License.
  */
 
+package com.cloudera.science.quince;
+
 import java.util.List;
 import org.apache.crunch.DoFn;
 import org.apache.crunch.Emitter;

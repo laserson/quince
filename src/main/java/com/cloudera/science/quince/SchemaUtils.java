@@ -13,12 +13,9 @@
  * License.
  */
 
+package com.cloudera.science.quince;
+
 import java.io.IOException;
-import org.apache.avro.Schema;
-import org.apache.crunch.Source;
-import org.apache.crunch.io.From;
-import org.apache.crunch.io.parquet.AvroParquetFileSource;
-import org.apache.crunch.types.avro.Avros;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
@@ -26,9 +23,8 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.PathFilter;
 import org.kitesdk.data.Format;
 import org.kitesdk.data.Formats;
-import org.kitesdk.data.spi.Schemas;
 
-class SchemaUtils {
+final class SchemaUtils {
   private SchemaUtils() {
   }
 

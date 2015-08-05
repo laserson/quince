@@ -1,5 +1,0 @@
-[
-  { "type": "identity", "source": "referenceName", "name": "chr" },
-  { "type": "range", "source": "start", "name": "pos", "size": 1000000 },
-  { "type": "provided", "name": "sample_group", "values": "string" }
-]
