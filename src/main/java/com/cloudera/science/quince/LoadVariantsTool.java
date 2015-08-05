@@ -65,19 +65,19 @@ public class LoadVariantsTool extends Configured implements Tool {
       .getLogger(LoadVariantsTool.class);
 
   @Parameter(description="<input-path> <output-path>")
-  List<String> paths;
+  private List<String> paths;
 
   @Parameter(names="--overwrite",
       description="Allow data for an existing sample group to be overwritten.")
-  boolean overwrite = false;
+  private boolean overwrite = false;
 
   @Parameter(names="--sample-group",
       description="An identifier for the group of samples being loaded.")
-  String sampleGroup = "sample1";
+  private String sampleGroup = "sample1";
 
   @Parameter(names="--segment-size",
       description="The number of base pairs in each segment partition.")
-  long segmentSize = 1000000;
+  private long segmentSize = 1000000;
 
   @Override
   public int run(String[] args) throws Exception {
@@ -190,7 +190,8 @@ public class LoadVariantsTool extends Configured implements Tool {
 
     @Override
     public GenericData.Record map(FlatVariant input) {
-      GenericData.Record record = new GenericData.Record(new Schema.Parser().parse(sortKeySchemaString));
+      GenericData.Record record =
+          new GenericData.Record(new Schema.Parser().parse(sortKeySchemaString));
       record.put("sampleId", input.getCallSetId());
       return record;
     }
