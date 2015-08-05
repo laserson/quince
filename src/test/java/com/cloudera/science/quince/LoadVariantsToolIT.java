@@ -42,10 +42,6 @@ public class LoadVariantsToolIT {
 
     FileUtil.fullyDelete(new File(baseDir));
 
-    LoadVariantsTool tool = new LoadVariantsTool();
-    Configuration conf = new Configuration();
-    tool.setConf(conf);
-
     String sampleGroup = "sample1";
     String input = "datasets/variants_avro";
     String output = "dataset:file:target/datasets/variants_flat_locuspart";
