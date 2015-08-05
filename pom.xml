@@ -169,6 +169,35 @@ License.
           </execution>
         </executions>
       </plugin>
+      <plugin>
+        <groupId>org.apache.rat</groupId>
+        <artifactId>apache-rat-plugin</artifactId>
+        <version>0.11</version>
+        <configuration>
+          <excludes>
+            <exclude>.travis.yml</exclude>
+            <exclude>**/*.avdl</exclude>
+            <exclude>**/*.conf</exclude>
+            <exclude>**/*.iml</exclude>
+            <exclude>**/*.md</exclude>
+            <exclude>**/*.txt</exclude>
+            <exclude>**/gen/**</exclude>
+            <exclude>**/resources/**</exclude>
+            <exclude>**/target/**</exclude>
+            <exclude>**/dependency-reduced-pom.xml</exclude>
+            <excludeSubProjects>false</excludeSubProjects>
+          </excludes>
+        </configuration>
+        <executions>
+          <execution>
+            <id>verify</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>check</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
     </plugins>
   </build>
 
