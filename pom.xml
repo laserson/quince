@@ -109,6 +109,36 @@ License.
       <version>4.12</version>
       <scope>test</scope>
     </dependency>
+
+    <!-- dependencies for loading from VCF -->
+    <dependency>
+      <groupId>org.seqdoop</groupId>
+      <artifactId>hadoop-bam</artifactId>
+      <version>7.0.0</version>
+      <exclusions>
+        <exclusion>
+          <groupId>org.seqdoop</groupId>
+          <artifactId>htsjdk</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>com.github.samtools</groupId>
+      <artifactId>htsjdk</artifactId>
+      <version>1.133</version>
+      <exclusions>
+        <exclusion>
+          <groupId>org.testng</groupId>
+          <artifactId>testng</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.opencb.hpg</groupId>
+      <artifactId>hpg-bigdata-core</artifactId>
+      <version>0.5-SNAPSHOT</version>
+      <optional>true</optional> <!-- requires Java 8 -->
+    </dependency>
   </dependencies>
 
   <build>
@@ -204,6 +234,7 @@ License.
             <exclude>**/*.iml</exclude>
             <exclude>**/*.md</exclude>
             <exclude>**/*.txt</exclude>
+            <exclude>**/*.vcf</exclude>
             <exclude>**/gen/**</exclude>
             <exclude>**/resources/**</exclude>
             <exclude>**/target/**</exclude>
