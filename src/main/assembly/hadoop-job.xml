@@ -35,4 +35,12 @@ License.
       </includes>
     </dependencySet>
   </dependencySets>
+  <!-- Include system dependency until hpg-bigdata-core is in a public Maven repo -->
+  <fileSets>
+    <fileSet>
+      <includes>
+        <include>system/**</include>
+      </includes>
+    </fileSet>
+  </fileSets>
 </assembly>

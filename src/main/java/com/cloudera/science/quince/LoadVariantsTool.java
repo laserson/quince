@@ -147,7 +147,7 @@ public class LoadVariantsTool extends Configured implements Tool {
         .fields().requiredString("sampleId").endRecord();
 
     PCollection<FlatVariant> partitioned =
-        CrunchDatasets.partitionAndSort(flatRecords, dataset, new
+        CrunchDatasetsExtension.partitionAndSort(flatRecords, dataset, new
             FlatVariantRecordMapFn(sortKeySchema), sortKeySchema, numReducers, 1);
 
     try {

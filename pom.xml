@@ -21,8 +21,7 @@ License.
 
   <properties>
     <java.version>1.7</java.version>
-    <!-- Locally-built snapshot version with https://issues.cloudera.org/browse/KITE-1032 is needed. -->
-    <kite.version>1.1.1-SNAPSHOT</kite.version>
+    <kite.version>1.1.0</kite.version>
   </properties>
 
   <dependencies>
@@ -133,11 +132,13 @@ License.
         </exclusion>
       </exclusions>
     </dependency>
+    <!-- Use a system dependency until hpg-bigdata-core is in a public Maven repo -->
     <dependency>
       <groupId>org.opencb.hpg</groupId>
       <artifactId>hpg-bigdata-core</artifactId>
       <version>0.5-SNAPSHOT</version>
-      <optional>true</optional> <!-- requires Java 8 -->
+      <scope>system</scope>
+      <systemPath>${basedir}/system/hpg-bigdata-core-0.5-SNAPSHOT.jar</systemPath>
     </dependency>
   </dependencies>
 
