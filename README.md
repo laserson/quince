@@ -1,4 +1,4 @@
-# quince
+# quince [![Build Status](https://travis-ci.org/cloudera/quince.svg?branch=master)](https://travis-ci.org/cloudera/quince)
 Scalable genomics variant store and analytics
 
 ## Pre-requisites and tool installation
