@@ -12,13 +12,13 @@ server implementations.
 The `sendsMode()` method in the References API may be used to determine if a
 server sends data in a given mode.
 */
-protocol FlatVariants {
+protocol FlatVariantCalls {
 
 /**
-A `FlatVariant` is a `Variant` but with nested fields flattened so it is suitable for
-use with Hive and Impala.
+A `FlatVariantCall` is a `Call` with nested fields flattened, and `Variant` data
+denormalized into it, so it is suitable for use with Hive and Impala.
 */
-record FlatVariant {
+record FlatVariantCall {
 
   /** The variant ID. */
   string id;

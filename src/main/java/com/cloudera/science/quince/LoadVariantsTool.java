@@ -44,7 +44,7 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
-import org.ga4gh.models.FlatVariant;
+import org.ga4gh.models.FlatVariantCall;
 import org.ga4gh.models.Variant;
 import org.kitesdk.data.CompressionType;
 import org.kitesdk.data.DatasetDescriptor;
@@ -121,22 +121,22 @@ public class LoadVariantsTool extends Configured implements Tool {
     Pipeline pipeline = new MRPipeline(getClass(), conf);
     PCollection<Variant> records = readVariants(path, conf, pipeline);
 
-    PCollection<FlatVariant> flatRecords = records.parallelDo(
-        new FlattenVariantFn(), Avros.specifics(FlatVariant.class));
+    PCollection<FlatVariantCall> flatRecords = records.parallelDo(
+        new FlattenVariantFn(), Avros.specifics(FlatVariantCall.class));
 
     DatasetDescriptor desc = new DatasetDescriptor.Builder()
-        .schema(FlatVariant.getClassSchema())
+        .schema(FlatVariantCall.getClassSchema())
         .partitionStrategy(buildPartitionStrategy(segmentSize))
         .format(Formats.PARQUET)
         .compressionType(CompressionType.Uncompressed)
         .build();
 
-    View<FlatVariant> dataset;
+    View<FlatVariantCall> dataset;
     if (Datasets.exists(outputPath)) {
-      dataset = Datasets.load(outputPath, FlatVariant.class)
+      dataset = Datasets.load(outputPath, FlatVariantCall.class)
           .getDataset().with("sample_group", sampleGroup);
     } else {
-      dataset = Datasets.create(outputPath, desc, FlatVariant.class)
+      dataset = Datasets.create(outputPath, desc, FlatVariantCall.class)
           .getDataset().with("sample_group", sampleGroup);
     }
 
@@ -146,9 +146,9 @@ public class LoadVariantsTool extends Configured implements Tool {
     final Schema sortKeySchema = SchemaBuilder.record("sortKey")
         .fields().requiredString("sampleId").endRecord();
 
-    PCollection<FlatVariant> partitioned =
+    PCollection<FlatVariantCall> partitioned =
         CrunchDatasetsExtension.partitionAndSort(flatRecords, dataset, new
-            FlatVariantRecordMapFn(sortKeySchema), sortKeySchema, numReducers, 1);
+            FlatVariantCallRecordMapFn(sortKeySchema), sortKeySchema, numReducers, 1);
 
     try {
       Target.WriteMode writeMode =
@@ -197,16 +197,17 @@ public class LoadVariantsTool extends Configured implements Tool {
         .build();
   }
 
-  private static class FlatVariantRecordMapFn extends MapFn<FlatVariant, GenericData.Record> {
+  private static class FlatVariantCallRecordMapFn
+      extends MapFn<FlatVariantCall, GenericData.Record> {
 
     private final String sortKeySchemaString; // TODO: improve
 
-    public FlatVariantRecordMapFn(Schema sortKeySchema) {
+    public FlatVariantCallRecordMapFn(Schema sortKeySchema) {
       this.sortKeySchemaString = sortKeySchema.toString();
     }
 
     @Override
-    public GenericData.Record map(FlatVariant input) {
+    public GenericData.Record map(FlatVariantCall input) {
       GenericData.Record record =
           new GenericData.Record(new Schema.Parser().parse(sortKeySchemaString));
       record.put("sampleId", input.getCallSetId());
