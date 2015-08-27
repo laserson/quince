@@ -56,7 +56,7 @@ hadoop jar target/quince-0.0.1-SNAPSHOT-job.jar \
   -D mapreduce.reduce.memory.mb=4096 \
   --sample-group sample1 \
   datasets/variants_avro \
-  dataset:hdfs:datasets/variants_flat_locuspart
+  datasets/variants_flat_locuspart
 ```
 
 ```bash

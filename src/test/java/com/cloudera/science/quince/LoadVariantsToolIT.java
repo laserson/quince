@@ -59,7 +59,7 @@ public class LoadVariantsToolIT {
 
     String sampleGroup = "sample1";
     String input = "datasets/variants_avro/small.ga4gh.avro";
-    String output = "dataset:file:target/datasets/variants_flat_locuspart";
+    String output = "target/datasets/variants_flat_locuspart";
 
     int exitCode = tool.run(new String[]{ "--sample-group", sampleGroup, input, output });
 
@@ -102,7 +102,7 @@ public class LoadVariantsToolIT {
 
     String sampleGroup = "sample1";
     String input = "datasets/variants_vcf/small.vcf";
-    String output = "dataset:file:target/datasets/variants_flat_locuspart";
+    String output = "target/datasets/variants_flat_locuspart";
 
     int exitCode = tool.run(new String[]{"--sample-group", sampleGroup, input, output});
 

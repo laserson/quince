@@ -60,14 +60,16 @@ import org.seqdoop.hadoop_bam.VCFInputFormat;
 import org.seqdoop.hadoop_bam.VariantContextWritable;
 
 /**
- * Loads Variants stored in Avro or Parquet GA4GH format into a Hadoop filesystem,
- * ready for querying with Hive or Impala.
+ * Loads Variants stored in VCF, or Avro or Parquet GA4GH format, into a Hadoop
+ * filesystem, ready for querying with Hive or Impala.
  */
 @Parameters(commandDescription = "Load variants tool")
 public class LoadVariantsTool extends Configured implements Tool {
 
   private static final Logger LOG = LoggerFactory
       .getLogger(LoadVariantsTool.class);
+
+  private static final String DATASET_SCHEME = "dataset";
 
   @Parameter(description="<input-path> <output-path>")
   private List<String> paths;
@@ -99,8 +101,8 @@ public class LoadVariantsTool extends Configured implements Tool {
       return 1;
     }
 
-    String inputPath = paths.get(0);
-    String outputPath = paths.get(1);
+    String inputPathString = paths.get(0);
+    String outputPathString = paths.get(1);
 
     Configuration conf = getConf();
     // Copy records to avoid problem with Parquet string statistics not being correct.
@@ -108,18 +110,18 @@ public class LoadVariantsTool extends Configured implements Tool {
     // (see https://issues.apache.org/jira/browse/PARQUET-251).
     conf.setBoolean(DatasetKeyOutputFormat.KITE_COPY_RECORDS, true);
 
-    Path path = new Path(inputPath);
+    Path inputPath = new Path(inputPathString);
 
-    if (path.getName().endsWith(".vcf")) {
+    if (inputPath.getName().endsWith(".vcf")) {
       int size = 500000;
       byte[] bytes = new byte[size];
-      InputStream inputStream = path.getFileSystem(conf).open(path);
+      InputStream inputStream = inputPath.getFileSystem(conf).open(inputPath);
       inputStream.read(bytes, 0, size);
       conf.set(VariantContextToVariantFn.VARIANT_HEADER, Base64.encodeBase64String(bytes));
     }
 
     Pipeline pipeline = new MRPipeline(getClass(), conf);
-    PCollection<Variant> records = readVariants(path, conf, pipeline);
+    PCollection<Variant> records = readVariants(inputPath, conf, pipeline);
 
     PCollection<FlatVariantCall> flatRecords = records.parallelDo(
         new FlattenVariantFn(), Avros.specifics(FlatVariantCall.class));
@@ -132,11 +134,19 @@ public class LoadVariantsTool extends Configured implements Tool {
         .build();
 
     View<FlatVariantCall> dataset;
-    if (Datasets.exists(outputPath)) {
-      dataset = Datasets.load(outputPath, FlatVariantCall.class)
+    String outputKiteUri;
+    if (outputPathString.startsWith(DATASET_SCHEME + ":")) {
+      outputKiteUri = outputPathString;
+    } else {
+      Path outputPath = new Path(outputPathString);
+      outputPath = outputPath.getFileSystem(conf).makeQualified(outputPath);
+      outputKiteUri = DATASET_SCHEME + ":" + outputPath.toUri();
+    }
+    if (Datasets.exists(outputKiteUri)) {
+      dataset = Datasets.load(outputKiteUri, FlatVariantCall.class)
           .getDataset().with("sample_group", sampleGroup);
     } else {
-      dataset = Datasets.create(outputPath, desc, FlatVariantCall.class)
+      dataset = Datasets.create(outputKiteUri, desc, FlatVariantCall.class)
           .getDataset().with("sample_group", sampleGroup);
     }
 
