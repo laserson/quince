@@ -64,11 +64,11 @@ public class LoadVariantsToolIT {
     int exitCode = tool.run(new String[]{ "--sample-group", sampleGroup, input, output });
 
     assertEquals(0, exitCode);
-    File partition = new File(baseDir,
+    File partition1 = new File(baseDir,
         "variants_flat_locuspart/chr=1/pos=0/sample_group=sample1");
-    assertTrue(partition.exists());
+    assertTrue(partition1.exists());
 
-    File[] dataFiles = partition.listFiles(new FileFilter() {
+    File[] dataFiles = partition1.listFiles(new FileFilter() {
       @Override
       public boolean accept(File pathname) {
         return !pathname.getName().startsWith(".");
@@ -86,10 +86,22 @@ public class LoadVariantsToolIT {
     exitCode = tool.run(new String[]{ "--overwrite", "--sample-group", sampleGroup,
         input, output });
     assertEquals(0, exitCode);
+    assertTrue(partition1.exists());
 
     // loading into a new sample group should always succeed
     exitCode = tool.run(new String[]{ "--sample-group", "sample2", input, output });
     assertEquals(0, exitCode);
+    File partition2 = new File(baseDir,
+        "variants_flat_locuspart/chr=1/pos=0/sample_group=sample2");
+    assertTrue(partition1.exists());
+    assertTrue(partition2.exists());
+
+    // overwriting an existing sample group should leave others untouched
+    exitCode = tool.run(new String[]{ "--overwrite", "--sample-group", sampleGroup,
+        input, output });
+    assertEquals(0, exitCode);
+    assertTrue(partition1.exists());
+    assertTrue(partition2.exists());
 
   }
 
