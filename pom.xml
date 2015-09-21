@@ -132,13 +132,10 @@ License.
         </exclusion>
       </exclusions>
     </dependency>
-    <!-- Use a system dependency until hpg-bigdata-core is in a public Maven repo -->
     <dependency>
-      <groupId>org.opencb.hpg</groupId>
+      <groupId>org.opencb.hpg-bigdata</groupId>
       <artifactId>hpg-bigdata-core</artifactId>
-      <version>0.5-SNAPSHOT</version>
-      <scope>system</scope>
-      <systemPath>${basedir}/system/hpg-bigdata-core-0.5-SNAPSHOT.jar</systemPath>
+      <version>0.5.0</version>
     </dependency>
   </dependencies>
 
