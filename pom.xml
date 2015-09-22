@@ -193,6 +193,7 @@ License.
         <configuration>
           <headerLocation>build-resources/header-file.txt</headerLocation>
           <configLocation>build-resources/checkstyle.xml</configLocation>
+          <excludes>**/org/apache/crunch/io/parquet/**</excludes>
         </configuration>
         <executions>
           <execution>
