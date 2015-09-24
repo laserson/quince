@@ -20,10 +20,8 @@ import com.beust.jcommander.Parameter;
 import com.beust.jcommander.ParameterException;
 import com.beust.jcommander.Parameters;
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.List;
 import org.apache.crunch.CrunchRuntimeException;
-import org.apache.commons.codec.binary.Base64;
 import org.apache.crunch.PCollection;
 import org.apache.crunch.PTable;
 import org.apache.crunch.Pipeline;
@@ -98,12 +96,9 @@ public class LoadVariantsTool extends Configured implements Tool {
     Configuration conf = getConf();
     Path inputPath = new Path(inputPathString);
 
-    if (inputPath.getName().endsWith(".vcf")) {
-      int size = 500000;
-      byte[] bytes = new byte[size];
-      InputStream inputStream = inputPath.getFileSystem(conf).open(inputPath);
-      inputStream.read(bytes, 0, size);
-      conf.set(VariantContextToVariantFn.VARIANT_HEADER, Base64.encodeBase64String(bytes));
+    Path file = findFile(inputPath, conf);
+    if (file.getName().endsWith(".vcf")) {
+      VariantContextToVariantFn.configureHeaders(conf, findVcfs(inputPath, conf), sampleGroup);
     }
 
     Pipeline pipeline = new MRPipeline(getClass(), conf);
@@ -171,18 +166,28 @@ public class LoadVariantsTool extends Configured implements Tool {
   private static Path findFile(Path path, Configuration conf) throws IOException {
     FileSystem fs = path.getFileSystem(conf);
     if (fs.isDirectory(path)) {
-      FileStatus[] fileStatuses = fs.listStatus(path, new PathFilter() {
-        @Override
-        public boolean accept(Path p) {
-          String name = p.getName();
-          return !name.startsWith("_") && !name.startsWith(".");
-        }
-      });
+      FileStatus[] fileStatuses = fs.listStatus(path, new HiddenPathFilter());
       return fileStatuses[0].getPath();
     } else {
       return path;
     }
   }
+
+  private static Path[] findVcfs(Path path, Configuration conf) throws IOException {
+    FileSystem fs = path.getFileSystem(conf);
+    if (fs.isDirectory(path)) {
+      FileStatus[] fileStatuses = fs.listStatus(path, new HiddenPathFilter());
+      Path[] vcfs = new Path[fileStatuses.length];
+      int i = 0;
+      for (FileStatus status : fileStatuses) {
+        vcfs[i++] = status.getPath();
+      }
+      return vcfs;
+    } else {
+      return new Path[] { path };
+    }
+  }
+
 
   private static boolean sampleGroupExists(Path path, Configuration conf, String sampleGroup)
       throws IOException {
@@ -216,6 +221,14 @@ public class LoadVariantsTool extends Configured implements Tool {
           fs.delete(sampleGroupStatus.getPath(), true);
         }
       }
+    }
+  }
+
+  static class HiddenPathFilter implements PathFilter {
+    @Override
+    public boolean accept(Path p) {
+      String name = p.getName();
+      return !name.startsWith("_") && !name.startsWith(".");
     }
   }
 

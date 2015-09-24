@@ -113,7 +113,7 @@ public class LoadVariantsToolIT {
     FileUtil.fullyDelete(new File(baseDir));
 
     String sampleGroup = "sample1";
-    String input = "datasets/variants_vcf/small.vcf";
+    String input = "datasets/variants_vcf";
     String output = "target/datasets/variants_flat_locuspart";
 
     int exitCode = tool.run(new String[]{"--sample-group", sampleGroup, input, output});
