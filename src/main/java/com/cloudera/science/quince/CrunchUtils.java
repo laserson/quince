@@ -22,8 +22,12 @@ import org.apache.crunch.PTable;
 import org.apache.crunch.Pair;
 import org.apache.crunch.lib.SecondarySort;
 
+import org.apache.crunch.types.avro.Avros;
+import org.ga4gh.models.Call;
 import org.ga4gh.models.FlatVariantCall;
+import org.ga4gh.models.Variant;
 
+import static com.cloudera.science.quince.FlattenVariantFn.flatten;
 import static org.apache.crunch.types.avro.Avros.*;
 
 public final class CrunchUtils {
@@ -32,7 +36,10 @@ public final class CrunchUtils {
   }
 
   public static PTable<String, FlatVariantCall> partitionAndSort(
-      PCollection<FlatVariantCall> flatRecords, long segmentSize, String sampleGroup) {
+      PCollection<Variant> records, long segmentSize, String sampleGroup) {
+    // flatten variants
+    PCollection<FlatVariantCall> flatRecords = records.parallelDo(
+        new FlattenVariantFn(), Avros.specifics(FlatVariantCall.class));
     // group by partition key (table key), then prepare for sorting by sample ID (first
     // element in value pair)
     PTable<String, Pair<String, FlatVariantCall>> partitionedRecords =
@@ -41,15 +48,15 @@ public final class CrunchUtils {
     // do the sort, and extract the partition key and full record
     PTable<String, FlatVariantCall> partitionedAndSortedRecords =
         SecondarySort.sortAndApply(partitionedRecords, new ExtractEntityFn(),
-            tableOf(strings(), flatRecords.getPType()));
+            tableOf(strings(), Avros.specifics(FlatVariantCall.class)));
     return partitionedAndSortedRecords;
   }
 
-  public static String extractPartitionKey(FlatVariantCall flat, long segmentSize,
+  public static String extractPartitionKey(FlatVariantCall variant, long segmentSize,
       String sampleGroup) {
     StringBuilder sb = new StringBuilder();
-    sb.append("chr=").append(flat.getReferenceName());
-    sb.append("/pos=").append(getRangeStart(segmentSize, flat.getStart()));
+    sb.append("chr=").append(variant.getReferenceName());
+    sb.append("/pos=").append(getRangeStart(segmentSize, variant.getStart()));
     sb.append("/sample_group=").append(sampleGroup);
     return sb.toString();
   }
@@ -59,7 +66,7 @@ public final class CrunchUtils {
   }
 
   /*
-   * Turns a variant call into a (partition key, (sample group, variant call)) pair.
+   * Turns a variant call into a (partition key, (sample id, variant call)) pair.
    */
   private static final class ExtractPartitionKeyFn
       extends DoFn<FlatVariantCall, Pair<String, Pair<String, FlatVariantCall>>> {
@@ -75,12 +82,12 @@ public final class CrunchUtils {
     public void process(FlatVariantCall input,
         Emitter<Pair<String, Pair<String, FlatVariantCall>>> emitter) {
       String partitionKey = extractPartitionKey(input, segmentSize, sampleGroup);
-      emitter.emit(Pair.of(partitionKey, Pair.of(sampleGroup, input)));
+      emitter.emit(Pair.of(partitionKey, Pair.of(input.getCallSetId().toString(), input)));
     }
   }
   /*
-   * Turns a (partition key, (sample group, variant call)) pair into a
-   * (partition key, variant call) pair.
+   * Turns a (partition key, (sample id, flat variant call)) pair into a
+   * (partition key, flat variant call) pair.
    */
   private static final class ExtractEntityFn extends
       DoFn<Pair<String, Iterable<Pair<String, FlatVariantCall>>>,
@@ -93,6 +100,26 @@ public final class CrunchUtils {
       for (Pair<String, FlatVariantCall> pair : input.second()) {
         FlatVariantCall variantCall = pair.second();
         emitter.emit(Pair.of(partitionKey, variantCall));
+      }
+    }
+  }
+  /*
+   * Turns a (partition key, list[sample id, variant call]) pair into a series of
+   * (partition key, flat variant call) pairs, expanding the calls (samples) in the variant.
+   */
+  private static final class ExtractFlatVariantsFn extends
+      DoFn<Pair<String, Iterable<Pair<String, Variant>>>,
+          Pair<String, FlatVariantCall>> {
+
+    @Override
+    public void process(Pair<String, Iterable<Pair<String, Variant>>> input,
+        Emitter<Pair<String, FlatVariantCall>> emitter) {
+      String partitionKey = input.first();
+      for (Pair<String, Variant> pair : input.second()) {
+        Variant variant = pair.second();
+        for (Call call : variant.getCalls()) {
+          emitter.emit(Pair.of(partitionKey, flatten(variant, call)));
+        }
       }
     }
   }

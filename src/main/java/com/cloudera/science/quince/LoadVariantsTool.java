@@ -104,14 +104,11 @@ public class LoadVariantsTool extends Configured implements Tool {
     Pipeline pipeline = new MRPipeline(getClass(), conf);
     PCollection<Variant> records = readVariants(inputPath, conf, pipeline);
 
-    PCollection<FlatVariantCall> flatRecords = records.parallelDo(
-        new FlattenVariantFn(), Avros.specifics(FlatVariantCall.class));
-
     int numReducers = conf.getInt("mapreduce.job.reduces", 1);
     System.out.println("Num reducers: " + numReducers);
 
     PTable<String, FlatVariantCall> partitioned =
-        CrunchUtils.partitionAndSort(flatRecords, segmentSize, sampleGroup);
+        CrunchUtils.partitionAndSort(records, segmentSize, sampleGroup);
 
     try {
       Path outputPath = new Path(outputPathString);

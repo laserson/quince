@@ -19,8 +19,11 @@ import java.io.File;
 import java.io.FileFilter;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileUtil;
+import org.apache.hadoop.fs.Path;
+import org.ga4gh.models.FlatVariantCall;
 import org.junit.Before;
 import org.junit.Test;
+import parquet.avro.AvroParquetReader;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -61,7 +64,7 @@ public class LoadVariantsToolIT {
     String input = "datasets/variants_avro/small.ga4gh.avro";
     String output = "target/datasets/variants_flat_locuspart";
 
-    int exitCode = tool.run(new String[]{ "--sample-group", sampleGroup, input, output });
+    int exitCode = tool.run(new String[]{"--sample-group", sampleGroup, input, output});
 
     assertEquals(0, exitCode);
     File partition1 = new File(baseDir,
@@ -132,5 +135,22 @@ public class LoadVariantsToolIT {
 
     assertEquals(1, dataFiles.length);
     assertTrue(dataFiles[0].getName().endsWith(".parquet"));
+
+    AvroParquetReader<FlatVariantCall> parquetReader =
+        new AvroParquetReader<>(new Path(dataFiles[0].toURI()));
+
+    // check records are sorted by sample id
+    String previousCallSetId = parquetReader.read().getCallSetId().toString();
+    while (true) {
+      FlatVariantCall flat = parquetReader.read();
+      if (flat == null) {
+        break;
+      }
+      String callSetId = flat.getCallSetId().toString();
+      assertTrue("Should be sorted by callSetId",
+          previousCallSetId.compareTo(callSetId) <= 0);
+      previousCallSetId = callSetId;
+    }
   }
+
 }
