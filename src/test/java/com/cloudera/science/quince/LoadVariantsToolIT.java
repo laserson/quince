@@ -17,6 +17,7 @@ package com.cloudera.science.quince;
 
 import java.io.File;
 import java.io.FileFilter;
+import java.io.IOException;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.fs.Path;
@@ -151,7 +152,64 @@ public class LoadVariantsToolIT {
     assertEquals(0, flat1.getGenotype1().intValue());
     assertEquals(1, flat1.getGenotype2().intValue());
 
+    checkSorted(dataFiles[0]);
+  }
+
+  @Test
+  public void testGVCF() throws Exception {
+
+    // Note that sites with no variant calls are ignored, see https://github.com/cloudera/quince/issues/19
+
+    String baseDir = "target/datasets";
+
+    FileUtil.fullyDelete(new File(baseDir));
+
+    String sampleGroup = "sample1";
+    String input = "datasets/variants_gvcf";
+    String output = "target/datasets/variants_flat_locuspart_gvcf";
+
+    int exitCode = tool.run(new String[]{"--sample-group", sampleGroup, input, output});
+
+    assertEquals(0, exitCode);
+    File partition = new File(baseDir,
+        "variants_flat_locuspart_gvcf/chr=20/pos=10000000/sample_group=sample1");
+    assertTrue(partition.exists());
+
+    File[] dataFiles = partition.listFiles(new FileFilter() {
+      @Override
+      public boolean accept(File pathname) {
+        return !pathname.getName().startsWith(".");
+      }
+    });
+
+    assertEquals(1, dataFiles.length);
+    assertTrue(dataFiles[0].getName().endsWith(".parquet"));
+
+    AvroParquetReader<FlatVariantCall> parquetReader =
+        new AvroParquetReader<>(new Path(dataFiles[0].toURI()));
+
+    // first record has first sample (call set) ID
+    FlatVariantCall flat1 = parquetReader.read();
+    assertEquals(".", flat1.getId());
+    assertEquals("20", flat1.getReferenceName());
+    assertEquals(10000116L, flat1.getStart().longValue());
+    assertEquals(10000117L, flat1.getEnd().longValue());
+    assertEquals("C", flat1.getReferenceBases());
+    assertEquals("T", flat1.getAlternateBases1());
+    assertEquals("NA12878", flat1.getCallSetId());
+    assertEquals(0, flat1.getGenotype1().intValue());
+    assertEquals(1, flat1.getGenotype2().intValue());
+
+    checkSorted(dataFiles[0]);
+  }
+
+  private void checkSorted(File file) throws IOException {
     // check records are sorted by sample id, then ref and start position
+    AvroParquetReader<FlatVariantCall> parquetReader =
+        new AvroParquetReader<>(new Path(file.toURI()));
+
+    FlatVariantCall flat1 = parquetReader.read();
+
     String previousCallSetId = flat1.getCallSetId().toString();
     String previousRef = flat1.getReferenceName().toString();
     Long previousStart = flat1.getStart();
@@ -178,5 +236,4 @@ public class LoadVariantsToolIT {
       previousStart = start;
     }
   }
-
 }

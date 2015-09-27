@@ -200,7 +200,7 @@ License.
         <artifactId>maven-failsafe-plugin</artifactId>
         <version>2.12.4</version>
         <configuration>
-          <argLine>-Dlog4j.debug</argLine>
+          <argLine>-Dlog4j.debug -da</argLine>
         </configuration>
         <executions>
           <execution>
