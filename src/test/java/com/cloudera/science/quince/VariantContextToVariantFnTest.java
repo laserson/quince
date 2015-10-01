@@ -41,7 +41,7 @@ public class VariantContextToVariantFnTest {
 
     Configuration conf = new Configuration();
     Path[] vcfs = new Path[] { new Path(vcf.toURI()) };
-    VariantContextToVariantFn.configureHeaders(conf, vcfs, "sample1");
+    VariantContextToVariantFn.configureHeaders(conf, vcfs, "default");
     VariantContextToVariantFn fn = new VariantContextToVariantFn();
     fn.setConfiguration(conf);
     fn.initialize();

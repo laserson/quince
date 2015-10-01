@@ -60,7 +60,7 @@ public class LoadVariantsToolIT {
 
     FileUtil.fullyDelete(new File(baseDir));
 
-    String sampleGroup = "sample1";
+    String sampleGroup = "default";
     String input = "datasets/variants_avro/small.ga4gh.avro";
     String output = "target/datasets/variants_flat_locuspart";
 
@@ -68,7 +68,7 @@ public class LoadVariantsToolIT {
 
     assertEquals(0, exitCode);
     File partition1 = new File(baseDir,
-        "variants_flat_locuspart/chr=1/pos=0/sample_group=sample1");
+        "variants_flat_locuspart/chr=1/pos=0/sample_group=default");
     assertTrue(partition1.exists());
 
     File[] dataFiles = partition1.listFiles(new FileFilter() {
@@ -115,7 +115,7 @@ public class LoadVariantsToolIT {
 
     FileUtil.fullyDelete(new File(baseDir));
 
-    String sampleGroup = "sample1";
+    String sampleGroup = "default";
     String input = "datasets/variants_vcf";
     String output = "target/datasets/variants_flat_locuspart";
 
@@ -123,7 +123,7 @@ public class LoadVariantsToolIT {
 
     assertEquals(0, exitCode);
     File partition = new File(baseDir,
-        "variants_flat_locuspart/chr=1/pos=0/sample_group=sample1");
+        "variants_flat_locuspart/chr=1/pos=0/sample_group=default");
     assertTrue(partition.exists());
 
     File[] dataFiles = partition.listFiles(new FileFilter() {

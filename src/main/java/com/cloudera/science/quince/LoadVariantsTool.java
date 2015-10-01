@@ -69,7 +69,7 @@ public class LoadVariantsTool extends Configured implements Tool {
 
   @Parameter(names="--sample-group",
       description="An identifier for the group of samples being loaded.")
-  private String sampleGroup = "sample1";
+  private String sampleGroup = "default";
 
   @Parameter(names="--segment-size",
       description="The number of base pairs in each segment partition.")
