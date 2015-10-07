@@ -139,17 +139,43 @@ public class LoadVariantsToolIT {
     AvroParquetReader<FlatVariantCall> parquetReader =
         new AvroParquetReader<>(new Path(dataFiles[0].toURI()));
 
-    // check records are sorted by sample id
-    String previousCallSetId = parquetReader.read().getCallSetId().toString();
+    // first record has first sample (call set) ID
+    FlatVariantCall flat1 = parquetReader.read();
+    assertEquals(".", flat1.getId());
+    assertEquals("1", flat1.getReferenceName());
+    assertEquals(14396L, flat1.getStart().longValue());
+    assertEquals(14400L, flat1.getEnd().longValue());
+    assertEquals("CTGT", flat1.getReferenceBases());
+    assertEquals("C", flat1.getAlternateBases1());
+    assertEquals("NA12878", flat1.getCallSetId());
+    assertEquals(0, flat1.getGenotype1().intValue());
+    assertEquals(1, flat1.getGenotype2().intValue());
+
+    // check records are sorted by sample id, then ref and start position
+    String previousCallSetId = flat1.getCallSetId().toString();
+    String previousRef = flat1.getReferenceName().toString();
+    Long previousStart = flat1.getStart();
     while (true) {
       FlatVariantCall flat = parquetReader.read();
       if (flat == null) {
         break;
       }
       String callSetId = flat.getCallSetId().toString();
+      String ref = flat1.getReferenceName().toString();
+      Long start = flat1.getStart();
       assertTrue("Should be sorted by callSetId",
           previousCallSetId.compareTo(callSetId) <= 0);
+
+      if (previousCallSetId.compareTo(callSetId) == 0) {
+        assertTrue("Should be sorted by ref within callSetId",
+            previousRef.compareTo(ref) <= 0);
+        assertTrue("Should be sorted by start within callSetId",
+            previousStart.compareTo(start) <= 0);
+      }
+
       previousCallSetId = callSetId;
+      previousRef = ref;
+      previousStart = start;
     }
   }
 
