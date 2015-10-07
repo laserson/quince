@@ -1,25 +1,9 @@
 # quince [![Build Status](https://travis-ci.org/cloudera/quince.svg?branch=master)](https://travis-ci.org/cloudera/quince)
 Scalable genomics variant store and analytics
 
-## Pre-requisites and tool installation
+## Pre-requisites
 
-You will need a Hadoop cluster. These instructions assume CDH 5.4.2.
-
-We'll use the Kite command line tools. Checkout, build and install this branch,
-which has a couple of fixes that we rely on (a [bug in the Hive partitioning]
-(https://issues.cloudera.org/browse/KITE-1028), and [sorting within a partition]
-(https://issues.cloudera.org/browse/KITE-1032)):
-[https://github.com/tomwhite/kite/tree/KITE-1032-sort-in-partition](https://github.com/tomwhite/kite/tree/KITE-1032-sort-in-partition).
-
-Unpack the Kite tarball from the _kite-tools-parent/kite-tools-cdh5/target_ directory and
- put the top-level unpacked directory on your `PATH` (along with a couple of other
- configuration environment variables):
-
-```bash
-export PATH=~/sw/kite-tools-cdh5-1.1.1-SNAPSHOT/bin:$PATH
-export HADOOP_CONF_DIR=/etc/hadoop/conf
-export HIVE_CONF_DIR=/etc/hive/conf
-```
+You will need a Hadoop cluster. These instructions assume CDH 5.4.x.
 
 ## Building Quince
 
@@ -63,20 +47,20 @@ hadoop jar target/quince-0.0.1-SNAPSHOT-job.jar \
 ```
 
 Note that the `--sample-group` argument is used label the samples being loaded. There 
-is no fixed format for this argument; it could be a numeric label, or a date, for example.
-
-The next step is to register the data in Hive, so we can use SQL to query it. The 
-simplest way to do this is by using the Kite command line tool. Note that this may take
- a while to run if there are a large number of partitions.
+is no fixed format for this argument; it could be a numeric label, or a date, for 
+example. You can see the data in HDFS as follows:
 
 ```bash
-kite-dataset create dataset:hive:/user/tom/datasets/variants_flat_locuspart
+hadoop fs -ls -R datasets/variants_flat_locuspart
 ```
 
-You can see the table definition by running:
+The next step is to register the data in Hive, so we can use SQL to query it. Run the 
+following commands to create the Hive table and update its partitions (change the host 
+name to the Hadoop namenode on your cluster):
 
 ```bash
-hive -e 'show create table datasets.variants_flat_locuspart'
+hive -f sql/create-variants.sql --hiveconf namenode='bottou01.sjc.cloudera.com'
+hive -f sql/update-variants-partitions.sql
 ```
 
 To test that the data is registered in the Hive metastore, try running this query:
@@ -91,16 +75,13 @@ You can do the same thing with Impala as follows:
 impala-shell -q 'invalidate metadata'
 impala-shell -q 'compute stats datasets.variants_flat_locuspart'
 impala-shell -q 'select count(*) from datasets.variants_flat_locuspart'
-impala-shell -q 'select count(*) from datasets.variants_flat_locuspart where referencename="chr1"'
+impala-shell -q 'select count(*) from datasets.variants_flat_locuspart where referencename="1"'
 ```
 
 ## Loading new samples
 
 Samples are loaded in batches. When you have a new group of samples to load, then run the
-`LoadVariantsTool` again, with a new `--sample-group`. You also need to specify the
-`--overwrite` argument; however since the data is written into a new sample group 
-partition existing data won't actually be overwritten. (If you use `--overwrite` and an 
-existing sample group ID it will overwrite the old data.)
+`LoadVariantsTool` again, with a new `--sample-group`.
 
 For example:
 
@@ -112,15 +93,18 @@ hadoop jar target/quince-0.0.1-SNAPSHOT-job.jar \
   -D mapreduce.map.memory.mb=4096 \
   -D mapreduce.reduce.memory.mb=4096 \
   --sample-group sample2 \
-  --overwrite \
   datasets/variants_vcf/small.vcf \
   datasets/variants_flat_locuspart
 ```
 
+If you want to replace an existing group of samples, then you need to specify the 
+`--overwrite` argument, which will delete the existing data for the sample group, 
+before writing the new data.
+
 To update the partitions in the Hive metastore, run the following command:
 
 ```bash
-hive -e 'msck repair table datasets.variants_flat_locuspart;'
+hive -f sql/update-variants-partitions.sql
 ```
 
 You can see the partitions for the new sample group with:
@@ -139,7 +123,18 @@ For Impala, update the partition information with:
 
 ```bash
 impala-shell -q 'refresh datasets.variants_flat_locuspart'
+impala-shell -q 'compute stats datasets.variants_flat_locuspart'
 impala-shell -q 'show partitions datasets.variants_flat_locuspart'
+```
+
+## Deleting data
+
+You can remove all the data with the following commands. _Note that the data will be 
+deleted permanently!_
+
+```bash
+hive -e 'drop table datasets.variants_flat_locuspart'
+hadoop fs -rm -r datasets/variants_flat_locuspart
 ```
 
 ## Loading from a GA4GH Avro file
@@ -147,8 +142,7 @@ impala-shell -q 'show partitions datasets.variants_flat_locuspart'
 As mentioned above, you can load variants data in GA4GH Avro format that was 
 generated using [hpg-bigdata](https://github.com/opencb/hpg-bigdata).
 
-First convert the file to Avro with no compression (deflate is not used by the Kite 
-tools we'll be using later):
+First convert the file to Avro with no compression (rather than deflate):
 
 ```bash
 avro-tools recodec ~/data/isaac2.vcf.gz.avro.deflate ~/data/isaac2.vcf.gz.avro
@@ -163,3 +157,14 @@ hadoop fs -put ~/data/isaac2.vcf.gz.avro datasets/variants_avro
 
 You can then use the `LoadVariantsTool` command from above, changing the input to 
 `datasets/variants_avro`.
+
+## Using Kite datasets
+
+You can also use the Kite command line tool to manage datasets in Hive. The 
+following command will infer the dataset's schema and partitioning strategy from files 
+in HDFS and create the necessary tables in Hive. Note that this may take
+ a while to run if there are a large number of partitions.
+
+```bash
+kite-dataset create dataset:hive:/user/tom/datasets/variants_flat_locuspart
+```

@@ -17,13 +17,18 @@ package com.cloudera.science.quince;
 
 import htsjdk.variant.variantcontext.VariantContext;
 import htsjdk.variant.vcf.VCFHeader;
-import java.io.ByteArrayInputStream;
+import htsjdk.variant.vcf.VCFHeaderLine;
 import java.io.IOException;
+import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.List;
 import org.apache.commons.codec.binary.Base64;
+import org.apache.commons.lang.SerializationUtils;
 import org.apache.crunch.DoFn;
 import org.apache.crunch.Emitter;
 import org.apache.crunch.Pair;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.LongWritable;
 import org.ga4gh.models.CallSet;
 import org.ga4gh.models.Variant;
@@ -42,47 +47,55 @@ import org.seqdoop.hadoop_bam.VariantContextWritable;
 public class VariantContextToVariantFn
     extends DoFn<Pair<LongWritable, VariantContextWritable>, Variant> {
 
-  public static final String VARIANT_HEADER = "variantHeader";
+  private static final String SAMPLE_GROUP = "sampleGroup";
+  private static final String VARIANT_HEADERS = "variantHeaders";
+  private static final String VARIANT_SET_ID = "quinceVariantSetId";
+
+  public static void configureHeaders(Configuration conf, Path[] vcfs, String sampleGroup)
+      throws IOException {
+    List<VCFHeader> headers = new ArrayList<>();
+    for (Path vcf : vcfs) {
+      InputStream inputStream = vcf.getFileSystem(conf).open(vcf);
+      VcfBlockIterator iterator = new VcfBlockIterator(inputStream, new FullVcfCodec());
+      VCFHeader header = iterator.getHeader();
+      header.addMetaDataLine(new VCFHeaderLine(VARIANT_SET_ID, vcf.getName()));
+      headers.add(header);
+    }
+    VCFHeader[] headersArray = headers.toArray(new VCFHeader[headers.size()]);
+    conf.set(VariantContextToVariantFn.VARIANT_HEADERS,
+        Base64.encodeBase64String(SerializationUtils.serialize(headersArray)));
+    conf.set(VariantContextToVariantFn.SAMPLE_GROUP, sampleGroup);
+  }
 
   private transient VariantContext2VariantConverter converter;
-  private transient VCFHeader header;
   private transient VariantConverterContext variantConverterContext;
 
   @Override
   public void initialize() {
-    try {
-      converter = new VariantContext2VariantConverter();
-      byte[] variantHeaders = Base64.decodeBase64(getConfiguration().get(VARIANT_HEADER));
-      VcfBlockIterator iterator = new VcfBlockIterator(
-          new ByteArrayInputStream(variantHeaders), new FullVcfCodec());
+    converter = new VariantContext2VariantConverter();
+    variantConverterContext = new VariantConverterContext();
 
-      header = iterator.getHeader();
+    byte[] variantHeaders = Base64.decodeBase64(getConfiguration().get(VARIANT_HEADERS));
+    VCFHeader[] headers = (VCFHeader[]) SerializationUtils.deserialize(variantHeaders);
 
-      int gtSize = header.getGenotypeSamples().size();
-
-      variantConverterContext = new VariantConverterContext();
-
+    for (VCFHeader header : headers) {
       VariantSet vs = new VariantSet();
-//        vs.setId(file.getName());
-//        vs.setDatasetId(file.getName());
-//        vs.setReferenceSetId("test");
-      vs.setId("test"); //TODO
-      vs.setDatasetId("test");
-      vs.setReferenceSetId("test");
+      vs.setId(header.getMetaDataLine(VARIANT_SET_ID).getValue());
+      vs.setDatasetId(getConfiguration().get(SAMPLE_GROUP)); // dataset = sample group
+      VCFHeaderLine reference = header.getMetaDataLine("reference");
+      vs.setReferenceSetId(reference == null ? "unknown" : reference.getValue());
 
-      List<String> genotypeSamples = header.getGenotypeSamples();
       Genotype2CallSet gtConverter = new Genotype2CallSet();
-      for (int gtPos = 0; gtPos < gtSize; ++gtPos) {
-        CallSet cs = gtConverter.forward(genotypeSamples.get(gtPos));
+      for (String genotypeSample : header.getGenotypeSamples()) {
+        CallSet cs = gtConverter.forward(genotypeSample);
         cs.getVariantSetIds().add(vs.getId());
+        // it's OK if there are duplicate sample names from different headers since the
+        // only information we require for conversion is the name itself so there's no
+        // scope for conflict
         variantConverterContext.getCallSetMap().put(cs.getName(), cs);
-//                callWriter.write(cs);
       }
-
-      converter.setContext(variantConverterContext);
-    } catch (IOException e) {
-      throw new RuntimeException(e);
     }
+    converter.setContext(variantConverterContext);
   }
 
   @Override

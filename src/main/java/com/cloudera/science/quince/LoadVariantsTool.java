@@ -20,15 +20,10 @@ import com.beust.jcommander.Parameter;
 import com.beust.jcommander.ParameterException;
 import com.beust.jcommander.Parameters;
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.List;
-import org.apache.avro.Schema;
-import org.apache.avro.SchemaBuilder;
-import org.apache.avro.generic.GenericData;
 import org.apache.crunch.CrunchRuntimeException;
-import org.apache.commons.codec.binary.Base64;
-import org.apache.crunch.MapFn;
 import org.apache.crunch.PCollection;
+import org.apache.crunch.PTable;
 import org.apache.crunch.Pipeline;
 import org.apache.crunch.PipelineResult;
 import org.apache.crunch.Source;
@@ -37,23 +32,19 @@ import org.apache.crunch.TableSource;
 import org.apache.crunch.impl.mr.MRPipeline;
 import org.apache.crunch.io.From;
 import org.apache.crunch.io.parquet.AvroParquetFileSource;
+import org.apache.crunch.io.parquet.AvroParquetPathPerKeyTarget;
 import org.apache.crunch.types.avro.Avros;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
+import org.apache.hadoop.fs.FileStatus;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.PathFilter;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
 import org.ga4gh.models.FlatVariantCall;
 import org.ga4gh.models.Variant;
-import org.kitesdk.data.CompressionType;
-import org.kitesdk.data.DatasetDescriptor;
-import org.kitesdk.data.Datasets;
-import org.kitesdk.data.Formats;
-import org.kitesdk.data.PartitionStrategy;
-import org.kitesdk.data.View;
-import org.kitesdk.data.crunch.CrunchDatasets;
-import org.kitesdk.data.mapreduce.DatasetKeyOutputFormat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.seqdoop.hadoop_bam.VCFInputFormat;
@@ -69,8 +60,6 @@ public class LoadVariantsTool extends Configured implements Tool {
   private static final Logger LOG = LoggerFactory
       .getLogger(LoadVariantsTool.class);
 
-  private static final String DATASET_SCHEME = "dataset";
-
   @Parameter(description="<input-path> <output-path>")
   private List<String> paths;
 
@@ -80,7 +69,7 @@ public class LoadVariantsTool extends Configured implements Tool {
 
   @Parameter(names="--sample-group",
       description="An identifier for the group of samples being loaded.")
-  private String sampleGroup = "sample1";
+  private String sampleGroup = "default";
 
   @Parameter(names="--segment-size",
       description="The number of base pairs in each segment partition.")
@@ -105,65 +94,37 @@ public class LoadVariantsTool extends Configured implements Tool {
     String outputPathString = paths.get(1);
 
     Configuration conf = getConf();
-    // Copy records to avoid problem with Parquet string statistics not being correct.
-    // This can be removed from parquet 1.8.0
-    // (see https://issues.apache.org/jira/browse/PARQUET-251).
-    conf.setBoolean(DatasetKeyOutputFormat.KITE_COPY_RECORDS, true);
-
     Path inputPath = new Path(inputPathString);
 
-    if (inputPath.getName().endsWith(".vcf")) {
-      int size = 500000;
-      byte[] bytes = new byte[size];
-      InputStream inputStream = inputPath.getFileSystem(conf).open(inputPath);
-      inputStream.read(bytes, 0, size);
-      conf.set(VariantContextToVariantFn.VARIANT_HEADER, Base64.encodeBase64String(bytes));
+    Path file = findFile(inputPath, conf);
+    if (file.getName().endsWith(".vcf")) {
+      VariantContextToVariantFn.configureHeaders(conf, findVcfs(inputPath, conf), sampleGroup);
     }
 
     Pipeline pipeline = new MRPipeline(getClass(), conf);
     PCollection<Variant> records = readVariants(inputPath, conf, pipeline);
 
-    PCollection<FlatVariantCall> flatRecords = records.parallelDo(
-        new FlattenVariantFn(), Avros.specifics(FlatVariantCall.class));
-
-    DatasetDescriptor desc = new DatasetDescriptor.Builder()
-        .schema(FlatVariantCall.getClassSchema())
-        .partitionStrategy(buildPartitionStrategy(segmentSize))
-        .format(Formats.PARQUET)
-        .compressionType(CompressionType.Uncompressed)
-        .build();
-
-    View<FlatVariantCall> dataset;
-    String outputKiteUri;
-    if (outputPathString.startsWith(DATASET_SCHEME + ":")) {
-      outputKiteUri = outputPathString;
-    } else {
-      Path outputPath = new Path(outputPathString);
-      outputPath = outputPath.getFileSystem(conf).makeQualified(outputPath);
-      outputKiteUri = DATASET_SCHEME + ":" + outputPath.toUri();
-    }
-    if (Datasets.exists(outputKiteUri)) {
-      dataset = Datasets.load(outputKiteUri, FlatVariantCall.class)
-          .getDataset().with("sample_group", sampleGroup);
-    } else {
-      dataset = Datasets.create(outputKiteUri, desc, FlatVariantCall.class)
-          .getDataset().with("sample_group", sampleGroup);
-    }
-
     int numReducers = conf.getInt("mapreduce.job.reduces", 1);
     System.out.println("Num reducers: " + numReducers);
 
-    final Schema sortKeySchema = SchemaBuilder.record("sortKey")
-        .fields().requiredString("sampleId").endRecord();
-
-    PCollection<FlatVariantCall> partitioned =
-        CrunchDatasetsExtension.partitionAndSort(flatRecords, dataset, new
-            FlatVariantCallRecordMapFn(sortKeySchema), sortKeySchema, numReducers, 1);
+    PTable<String, FlatVariantCall> partitioned =
+        CrunchUtils.partitionAndSort(records, segmentSize, sampleGroup);
 
     try {
-      Target.WriteMode writeMode =
-          overwrite ? Target.WriteMode.OVERWRITE : Target.WriteMode.DEFAULT;
-      pipeline.write(partitioned, CrunchDatasets.asTarget(dataset), writeMode);
+      Path outputPath = new Path(outputPathString);
+      outputPath = outputPath.getFileSystem(conf).makeQualified(outputPath);
+
+      if (sampleGroupExists(outputPath, conf, sampleGroup)) {
+        if (overwrite) {
+          deleteSampleGroup(outputPath, conf, sampleGroup);
+        } else {
+          LOG.error("Sample group already exists: " + sampleGroup);
+          return 1;
+        }
+      }
+
+      pipeline.write(partitioned, new AvroParquetPathPerKeyTarget(outputPath),
+          Target.WriteMode.APPEND);
     } catch (CrunchRuntimeException e) {
       LOG.error("Crunch runtime error", e);
       return 1;
@@ -181,7 +142,7 @@ public class LoadVariantsTool extends Configured implements Tool {
 
   private static PCollection<Variant> readVariants(Path path, Configuration conf,
       Pipeline pipeline) throws IOException {
-    Path file = SchemaUtils.findFile(path, conf);
+    Path file = findFile(path, conf);
     if (file.getName().endsWith(".avro")) {
       return pipeline.read(From.avroFile(path, Avros.specifics(Variant.class)));
     } else if (file.getName().endsWith(".parquet")) {
@@ -199,29 +160,93 @@ public class LoadVariantsTool extends Configured implements Tool {
     throw new IllegalStateException("Unrecognized format for " + file);
   }
 
-  static PartitionStrategy buildPartitionStrategy(long segmentSize) throws IOException {
-    return new PartitionStrategy.Builder()
-        .identity("referenceName", "chr")
-        .fixedSizeRange("start", "pos", segmentSize)
-        .provided("sample_group", "string")
-        .build();
+  private static Path findFile(Path path, Configuration conf) throws IOException {
+    FileSystem fs = path.getFileSystem(conf);
+    if (fs.isDirectory(path)) {
+      FileStatus[] fileStatuses = fs.listStatus(path, new HiddenPathFilter());
+      return fileStatuses[0].getPath();
+    } else {
+      return path;
+    }
   }
 
-  private static class FlatVariantCallRecordMapFn
-      extends MapFn<FlatVariantCall, GenericData.Record> {
-
-    private final String sortKeySchemaString; // TODO: improve
-
-    public FlatVariantCallRecordMapFn(Schema sortKeySchema) {
-      this.sortKeySchemaString = sortKeySchema.toString();
+  private static Path[] findVcfs(Path path, Configuration conf) throws IOException {
+    FileSystem fs = path.getFileSystem(conf);
+    if (fs.isDirectory(path)) {
+      FileStatus[] fileStatuses = fs.listStatus(path, new HiddenPathFilter());
+      Path[] vcfs = new Path[fileStatuses.length];
+      int i = 0;
+      for (FileStatus status : fileStatuses) {
+        vcfs[i++] = status.getPath();
+      }
+      return vcfs;
+    } else {
+      return new Path[] { path };
     }
+  }
 
+
+  private static boolean sampleGroupExists(Path path, Configuration conf, String sampleGroup)
+      throws IOException {
+    FileSystem fs = path.getFileSystem(conf);
+    if (!fs.exists(path)) {
+      return false;
+    }
+    for (FileStatus chrStatus : fs.listStatus(path, new PartitionPathFilter("chr"))) {
+      for (FileStatus posStatus : fs.listStatus(chrStatus.getPath(),
+          new PartitionPathFilter("pos"))) {
+        if (fs.listStatus(posStatus.getPath(),
+            new PartitionPathFilter("sample_group", sampleGroup)).length > 0) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  private static void deleteSampleGroup(Path path, Configuration conf, String sampleGroup)
+      throws IOException {
+    FileSystem fs = path.getFileSystem(conf);
+    if (!fs.exists(path)) {
+      return;
+    }
+    for (FileStatus chrStatus : fs.listStatus(path, new PartitionPathFilter("chr"))) {
+      for (FileStatus posStatus : fs.listStatus(chrStatus.getPath(),
+          new PartitionPathFilter("pos"))) {
+        for (FileStatus sampleGroupStatus : fs.listStatus(posStatus.getPath(),
+            new PartitionPathFilter("sample_group", sampleGroup))) {
+          fs.delete(sampleGroupStatus.getPath(), true);
+        }
+      }
+    }
+  }
+
+  static class HiddenPathFilter implements PathFilter {
     @Override
-    public GenericData.Record map(FlatVariantCall input) {
-      GenericData.Record record =
-          new GenericData.Record(new Schema.Parser().parse(sortKeySchemaString));
-      record.put("sampleId", input.getCallSetId());
-      return record;
+    public boolean accept(Path p) {
+      String name = p.getName();
+      return !name.startsWith("_") && !name.startsWith(".");
     }
   }
+
+  static class PartitionPathFilter implements PathFilter {
+    private final String partitionName;
+    private final String partitionValue;
+    public PartitionPathFilter(String partitionName) {
+      this(partitionName, null);
+    }
+    public PartitionPathFilter(String partitionName, String partitionValue) {
+      this.partitionName = partitionName;
+      this.partitionValue = partitionValue;
+    }
+    @Override
+    public boolean accept(Path path) {
+      if (partitionValue == null) {
+        return path.getName().startsWith(partitionName + "=");
+      } else {
+        return path.getName().equals(partitionName + "=" + partitionValue);
+      }
+    }
+  }
+
 }

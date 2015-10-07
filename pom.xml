@@ -21,30 +21,9 @@ License.
 
   <properties>
     <java.version>1.7</java.version>
-    <kite.version>1.1.0</kite.version>
   </properties>
 
   <dependencies>
-    <dependency>
-      <groupId>org.kitesdk</groupId>
-      <artifactId>kite-data-core</artifactId>
-      <version>${kite.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>org.kitesdk</groupId>
-      <artifactId>kite-data-crunch</artifactId>
-      <version>${kite.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>org.kitesdk</groupId>
-      <artifactId>kite-data-mapreduce</artifactId>
-      <version>${kite.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>org.kitesdk</groupId>
-      <artifactId>kite-data-s3</artifactId>
-      <version>${kite.version}</version>
-    </dependency>
     <dependency>
       <groupId>org.apache.crunch</groupId>
       <artifactId>crunch-core</artifactId>
@@ -96,6 +75,17 @@ License.
       <groupId>org.apache.avro</groupId>
       <artifactId>avro-mapred</artifactId>
       <version>1.7.7</version>
+    </dependency>
+    <dependency>
+      <groupId>com.twitter</groupId>
+      <artifactId>parquet-avro</artifactId>
+      <version>1.6.0</version>
+      <exclusions>
+        <exclusion>
+          <groupId>org.apache.hadoop</groupId>
+          <artifactId>hadoop-core</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
     <dependency>
       <groupId>com.beust</groupId>
@@ -193,6 +183,7 @@ License.
         <configuration>
           <headerLocation>build-resources/header-file.txt</headerLocation>
           <configLocation>build-resources/checkstyle.xml</configLocation>
+          <excludes>**/org/apache/crunch/io/parquet/**</excludes>
         </configuration>
         <executions>
           <execution>
