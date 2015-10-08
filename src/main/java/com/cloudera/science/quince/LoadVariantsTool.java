@@ -63,6 +63,11 @@ public class LoadVariantsTool extends Configured implements Tool {
       description="The number of base pairs in each segment partition.")
   private long segmentSize = 1000000;
 
+  @Parameter(names="--sort-reduce-side",
+      description="Sorting is done on the reduce side (takes more memory) rather than " +
+          "using the shuffle (slower).")
+  private boolean sortReduceSide = false;
+
   @Override
   public int run(String[] args) throws Exception {
     JCommander jc = new JCommander(this);
@@ -97,7 +102,9 @@ public class LoadVariantsTool extends Configured implements Tool {
     System.out.println("Num reducers: " + numReducers);
 
     PTable<String, FlatVariantCall> partitioned =
-        CrunchUtils.partitionAndSort(records, segmentSize, sampleGroup);
+        sortReduceSide ?
+        CrunchUtils.partitionAndSortReduceSide(records, segmentSize, sampleGroup) :
+        CrunchUtils.partitionAndSortUsingShuffle(records, segmentSize, sampleGroup);
 
     try {
       Path outputPath = new Path(outputPathString);
