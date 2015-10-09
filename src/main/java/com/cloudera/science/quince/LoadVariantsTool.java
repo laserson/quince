@@ -68,6 +68,10 @@ public class LoadVariantsTool extends Configured implements Tool {
           "using the shuffle (slower).")
   private boolean sortReduceSide = false;
 
+  @Parameter(names="--num-reducers",
+      description="The number of reducers to use.")
+  private int numReducers = 0;
+
   @Override
   public int run(String[] args) throws Exception {
     JCommander jc = new JCommander(this);
@@ -98,13 +102,16 @@ public class LoadVariantsTool extends Configured implements Tool {
     Pipeline pipeline = new MRPipeline(getClass(), conf);
     PCollection<Variant> records = FileUtils.readVariants(inputPath, conf, pipeline);
 
-    int numReducers = conf.getInt("mapreduce.job.reduces", 1);
-    System.out.println("Num reducers: " + numReducers);
+    if (numReducers == 0) {
+      numReducers = conf.getInt("mapreduce.job.reduces", 1);
+      System.out.println("Set num reducers from mapreduce.job.reduces to: " +
+          numReducers);
+    }
 
     PTable<String, FlatVariantCall> partitioned =
         sortReduceSide ?
-        CrunchUtils.partitionAndSortReduceSide(records, segmentSize, sampleGroup) :
-        CrunchUtils.partitionAndSortUsingShuffle(records, segmentSize, sampleGroup);
+        CrunchUtils.partitionAndSortReduceSide(records, segmentSize, sampleGroup, numReducers) :
+        CrunchUtils.partitionAndSortUsingShuffle(records, segmentSize, sampleGroup, numReducers);
 
     try {
       Path outputPath = new Path(outputPathString);

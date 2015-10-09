@@ -45,7 +45,8 @@ public final class CrunchUtils {
   }
 
   public static PTable<String, FlatVariantCall> partitionAndSortUsingShuffle(
-      PCollection<Variant> records, long segmentSize, String sampleGroup) {
+      PCollection<Variant> records, long segmentSize, String sampleGroup,
+      int numReducers) {
     // flatten variants
     PCollection<FlatVariantCall> flatRecords = records.parallelDo(
         new FlattenVariantFn(), Avros.specifics(FlatVariantCall.class));
@@ -58,15 +59,16 @@ public final class CrunchUtils {
     // do the sort, and extract the partition key and full record
     PTable<String, FlatVariantCall> partitionedAndSortedRecords =
         SecondarySort.sortAndApply(keyedRecords, new ExtractEntityFn(),
-            tableOf(strings(), Avros.specifics(FlatVariantCall.class)));
+            tableOf(strings(), Avros.specifics(FlatVariantCall.class)), numReducers);
     return partitionedAndSortedRecords;
   }
 
   public static PTable<String, FlatVariantCall> partitionAndSortReduceSide(
-      PCollection<Variant> records, long segmentSize, String sampleGroup) {
+      PCollection<Variant> records, long segmentSize, String sampleGroup,
+      int numReducers) {
     return records
         .by(new ExtractPartitionKeyFromVariantFn(segmentSize, sampleGroup), strings())
-        .groupByKey()
+        .groupByKey(numReducers)
         .parallelDo(new FlattenVariantsFn(),
             tableOf(strings(), Avros.specifics(FlatVariantCall.class)));
   }
@@ -175,6 +177,7 @@ public final class CrunchUtils {
           flatVariants.add(flatten(variant, call));
           if ((++count % 1000000) == 0) {
             LOG.info("Flattened {} variants", count);
+            getContext().progress();
           }
         }
       }
