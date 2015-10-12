@@ -19,7 +19,10 @@ import com.beust.jcommander.JCommander;
 import com.beust.jcommander.Parameter;
 import com.beust.jcommander.ParameterException;
 import com.beust.jcommander.Parameters;
+import com.google.common.base.Splitter;
+import com.google.common.collect.Sets;
 import java.util.List;
+import java.util.Set;
 import org.apache.crunch.CrunchRuntimeException;
 import org.apache.crunch.PCollection;
 import org.apache.crunch.PTable;
@@ -58,6 +61,10 @@ public class LoadVariantsTool extends Configured implements Tool {
   @Parameter(names="--sample-group",
       description="An identifier for the group of samples being loaded.")
   private String sampleGroup = "default";
+
+  @Parameter(names="--samples",
+      description="Comma-separated list of samples to include.")
+  private String samples;
 
   @Parameter(names="--segment-size",
       description="The number of base pairs in each segment partition.")
@@ -108,10 +115,15 @@ public class LoadVariantsTool extends Configured implements Tool {
           numReducers);
     }
 
+    Set<String> sampleSet = samples == null ? null :
+        Sets.newLinkedHashSet(Splitter.on(',').split(samples));
+
     PTable<String, FlatVariantCall> partitioned =
         sortReduceSide ?
-        CrunchUtils.partitionAndSortReduceSide(records, segmentSize, sampleGroup, numReducers) :
-        CrunchUtils.partitionAndSortUsingShuffle(records, segmentSize, sampleGroup, numReducers);
+        CrunchUtils.partitionAndSortReduceSide(records, segmentSize, sampleGroup,
+            sampleSet, numReducers) :
+        CrunchUtils.partitionAndSortUsingShuffle(records, segmentSize, sampleGroup,
+            sampleSet, numReducers);
 
     try {
       Path outputPath = new Path(outputPathString);

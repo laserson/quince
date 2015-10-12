@@ -16,6 +16,7 @@
 package com.cloudera.science.quince;
 
 import java.util.List;
+import java.util.Set;
 import org.apache.crunch.DoFn;
 import org.apache.crunch.Emitter;
 import org.ga4gh.models.Call;
@@ -23,6 +24,12 @@ import org.ga4gh.models.FlatVariantCall;
 import org.ga4gh.models.Variant;
 
 class FlattenVariantFn extends DoFn<Variant, FlatVariantCall> {
+
+  private Set<String> samples;
+
+  public FlattenVariantFn(Set<String> samples) {
+    this.samples = samples;
+  }
 
   public static FlatVariantCall flatten(Variant variant, Call call) {
     FlatVariantCall flatVariantCall = new FlatVariantCall();
@@ -56,7 +63,9 @@ class FlattenVariantFn extends DoFn<Variant, FlatVariantCall> {
   @Override
   public void process(Variant variant, Emitter<FlatVariantCall> emitter) {
     for (Call call : variant.getCalls()) {
-      emitter.emit(flatten(variant, call));
+      if (samples == null || samples.contains(call.getCallSetId())) {
+        emitter.emit(flatten(variant, call));
+      }
     }
   }
   private static <T> T get(List<T> names, int index) {
