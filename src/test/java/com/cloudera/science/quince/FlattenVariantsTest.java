@@ -24,11 +24,22 @@ import org.ga4gh.models.Variant;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 
 public class FlattenVariantsTest {
 
+  static class CapturingEmitter implements Emitter<FlatVariantCall> {
+    List<FlatVariantCall> flatVariantCalls = Lists.newArrayList();
+    @Override
+    public void emit(FlatVariantCall flatVariantCall) {
+      flatVariantCalls.add(flatVariantCall);
+    }
+    @Override
+    public void flush() { }
+  }
+
   @Test
-  public void testVCF() {
+  public void testVariantWithCalls() {
     Variant v = Variant.newBuilder()
         .setId(".")
         .setVariantSetId("")
@@ -52,17 +63,7 @@ public class FlattenVariantsTest {
         ))
         .build();
 
-    class CapturingEmitter implements Emitter<FlatVariantCall> {
-      List<FlatVariantCall> flatVariantCalls = Lists.newArrayList();
-      @Override
-      public void emit(FlatVariantCall flatVariantCall) {
-        flatVariantCalls.add(flatVariantCall);
-      }
-      @Override
-      public void flush() { }
-    }
-
-    FlattenVariantFn fn = new FlattenVariantFn(null);
+    FlattenVariantFn fn = new FlattenVariantFn();
     CapturingEmitter emitter = new CapturingEmitter();
     fn.process(v, emitter);
 
@@ -90,5 +91,37 @@ public class FlattenVariantsTest {
     assertEquals("NA12891", flat2.getCallSetId());
     assertEquals(0, flat2.getGenotype1().intValue());
     assertEquals(1, flat2.getGenotype2().intValue());
+  }
+
+  @Test
+  public void testVariantOnly() {
+    Variant v = Variant.newBuilder()
+        .setId(".")
+        .setVariantSetId("")
+        .setReferenceName("1")
+        .setStart(14396L)
+        .setEnd(14400L)
+        .setReferenceBases("CTGT")
+        .setAlternateBases(ImmutableList.<CharSequence>of("C"))
+        .setAlleleIds(ImmutableList.<CharSequence>of("", ""))
+        .build();
+
+    FlattenVariantFn fn = new FlattenVariantFn(null, true);
+    CapturingEmitter emitter = new CapturingEmitter();
+    fn.process(v, emitter);
+
+    assertEquals("Each variant produces a FlatVariantCall", 1,
+        emitter.flatVariantCalls.size());
+
+    FlatVariantCall flat1 = emitter.flatVariantCalls.get(0);
+    assertEquals(".", flat1.getId());
+    assertEquals("1", flat1.getReferenceName());
+    assertEquals(14396L, flat1.getStart().longValue());
+    assertEquals(14400L, flat1.getEnd().longValue());
+    assertEquals("CTGT", flat1.getReferenceBases());
+    assertEquals("C", flat1.getAlternateBases1());
+    assertNull(flat1.getCallSetId());
+    assertNull(flat1.getGenotype1());
+    assertNull(flat1.getGenotype2());
   }
 }
