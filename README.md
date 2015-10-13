@@ -46,7 +46,7 @@ hadoop jar target/quince-0.0.1-SNAPSHOT-job.jar \
   datasets/variants_flat_locuspart
 ```
 
-Note that the `--sample-group` argument is used label the samples being loaded. There 
+Note that the `--sample-group` argument is used to label the samples being loaded. There 
 is no fixed format for this argument; it could be a numeric label, or a date, for 
 example. You can see the data in HDFS as follows:
 
@@ -182,4 +182,84 @@ in HDFS and create the necessary tables in Hive. Note that this may take
 
 ```bash
 kite-dataset create dataset:hive:/user/tom/datasets/variants_flat_locuspart
+```
+
+## Loading the 1000 Genomes VCF data
+ 
+There are scripts in [Eggo](https://github.com/bigdatagenomics/eggo) to do this, but they are not quite complete, so here are 
+some instructions to do this manually.
+
+The first step is to download the data and decompress it into HDFS:
+
+```bash
+./scripts/download_1000_genomes.sh
+```
+
+We are going to load the samples in batches, so use the following to find all the 
+sample IDs, printing 100 samples per line:
+
+```bash
+hadoop jar target/quince-0.0.1-SNAPSHOT-job.jar \
+  com.cloudera.science.quince.PrintSamplesTool \
+  --samples-per-line 100 \
+  vcf-1000genomes
+```
+
+Now we can load the first 100 samples by running this command:
+
+```bash
+hadoop jar target/quince-0.0.1-SNAPSHOT-job.jar \
+  com.cloudera.science.quince.LoadVariantsTool \
+  -D mapreduce.map.java.opts="-Djava.net.preferIPv4Stack=true -Xmx3g" \
+  -D mapreduce.reduce.java.opts="-Djava.net.preferIPv4Stack=true -Xmx3g" \
+  -D mapreduce.map.memory.mb=4096 \
+  -D mapreduce.reduce.memory.mb=4096 \
+  --sample-group 1000genomes \
+  --num-reducers 3100 \
+  --samples HG00096,HG00097,HG00099,HG00100,HG00101,HG00102,HG00103,HG00105,HG00106,HG00107,HG00108,HG00109,HG00110,HG00111,HG00112,HG00113,HG00114,HG00115,HG00116,HG00117,HG00118,HG00119,HG00120,HG00121,HG00122,HG00123,HG00125,HG00126,HG00127,HG00128,HG00129,HG00130,HG00131,HG00132,HG00133,HG00136,HG00137,HG00138,HG00139,HG00140,HG00141,HG00142,HG00143,HG00145,HG00146,HG00148,HG00149,HG00150,HG00151,HG00154,HG00155,HG00157,HG00158,HG00159,HG00160,HG00171,HG00173,HG00174,HG00176,HG00177,HG00178,HG00179,HG00180,HG00181,HG00182,HG00183,HG00185,HG00186,HG00187,HG00188,HG00189,HG00190,HG00231,HG00232,HG00233,HG00234,HG00235,HG00236,HG00237,HG00238,HG00239,HG00240,HG00242,HG00243,HG00244,HG00245,HG00246,HG00250,HG00251,HG00252,HG00253,HG00254,HG00255,HG00256,HG00257,HG00258,HG00259,HG00260,HG00261,HG00262 \
+  vcf-1000genomes \
+  datasets/variants_flat_locuspart
+```
+
+Register the data in the Hive metastore, and update Impala stats:
+
+```bash
+hive -f sql/create-variants.sql --hiveconf namenode='bottou01.sjc.cloudera.com'
+hive -f sql/update-variants-partitions.sql
+impala-shell -q 'invalidate metadata'
+impala-shell -q 'compute stats datasets.variants_flat_locuspart'
+```
+
+Run some queries using `impala-shell`:
+
+```sql
+
+use datasets; 
+
+-- total number of records
+select count(*) from variants_flat_locuspart;
+
+-- total number of samples
+select count(distinct(callsetid)) from variants_flat_locuspart;   
+
+-- number of records for a given sample
+select count(*) from variants_flat_locuspart where callsetid='HG00262';
+
+-- number of SNPs
+select count(*) from variants_flat_locuspart
+where length(referencebases) = 1
+and length(alternatebases_1) = 1
+and alternatebases_2 is null;
+
+-- number of monomorphic references
+select count(*) from variants_flat_locuspart
+where alternatebases_1 is null
+and alternatebases_2 is null;
+
+-- find all variants with frequencies in a small region
+select start, referencebases, alternatebases_1, genotype_1, genotype_2, count(1) from variants_flat_locuspart
+where referencename='1' and start between 75068210 and 75069210
+and chr='1' and pos between cast(floor(75068210 / 1000000.) AS INT) * 1000000 and cast(floor(75069210 / 1000000.) AS INT) * 1000000
+group by start, referencebases, alternatebases_1, genotype_1, genotype_2
+order by start; 
 ```
