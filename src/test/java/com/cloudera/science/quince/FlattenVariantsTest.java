@@ -62,7 +62,7 @@ public class FlattenVariantsTest {
       public void flush() { }
     }
 
-    FlattenVariantFn fn = new FlattenVariantFn();
+    FlattenVariantFn fn = new FlattenVariantFn(null);
     CapturingEmitter emitter = new CapturingEmitter();
     fn.process(v, emitter);
 

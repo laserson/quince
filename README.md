@@ -127,6 +127,21 @@ impala-shell -q 'compute stats datasets.variants_flat_locuspart'
 impala-shell -q 'show partitions datasets.variants_flat_locuspart'
 ```
 
+### Loading only a subset of the samples in VCF files
+
+By default all the samples from the VCF files are loaded. If you want to only include 
+some of the samples, then use the `--samples` argument with a comma-separated list of 
+sample IDs. E.g. 
+
+```bash
+hadoop jar target/quince-0.0.1-SNAPSHOT-job.jar \
+  com.cloudera.science.quince.LoadVariantsTool \
+...
+--sample-group sample3
+--samples NA12878,NA12891,NA12892
+...
+```
+
 ## Deleting data
 
 You can remove all the data with the following commands. _Note that the data will be 

@@ -19,6 +19,7 @@ import com.google.common.collect.Lists;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 import org.apache.crunch.DoFn;
 import org.apache.crunch.Emitter;
 import org.apache.crunch.MapFn;
@@ -45,11 +46,11 @@ public final class CrunchUtils {
   }
 
   public static PTable<String, FlatVariantCall> partitionAndSortUsingShuffle(
-      PCollection<Variant> records, long segmentSize, String sampleGroup,
+      PCollection<Variant> records, long segmentSize, String sampleGroup, Set<String> samples,
       int numReducers) {
     // flatten variants
     PCollection<FlatVariantCall> flatRecords = records.parallelDo(
-        new FlattenVariantFn(), Avros.specifics(FlatVariantCall.class));
+        new FlattenVariantFn(samples), Avros.specifics(FlatVariantCall.class));
     // group by partition key (table key), then prepare for sorting by secondary key,
     // which is the sample ID and position (first element in value pair)
     PTable<String, Pair<Pair<String, Long>, FlatVariantCall>> keyedRecords =
@@ -64,12 +65,12 @@ public final class CrunchUtils {
   }
 
   public static PTable<String, FlatVariantCall> partitionAndSortReduceSide(
-      PCollection<Variant> records, long segmentSize, String sampleGroup,
+      PCollection<Variant> records, long segmentSize, String sampleGroup, Set<String> samples,
       int numReducers) {
     return records
         .by(new ExtractPartitionKeyFromVariantFn(segmentSize, sampleGroup), strings())
         .groupByKey(numReducers)
-        .parallelDo(new FlattenVariantsFn(),
+        .parallelDo(new FlattenAndSortVariantsFn(samples),
             tableOf(strings(), Avros.specifics(FlatVariantCall.class)));
   }
 
@@ -161,9 +162,15 @@ public final class CrunchUtils {
    * Turns a (partition key, list[variant call]) pair into a series of
    * (partition key, flat variant call) pairs, expanding the calls (samples) in the variant.
    */
-  private static final class FlattenVariantsFn extends
+  private static final class FlattenAndSortVariantsFn extends
       DoFn<Pair<String, Iterable<Variant>>,
           Pair<String, FlatVariantCall>> {
+
+    private Set<String> samples;
+
+    public FlattenAndSortVariantsFn(Set<String> samples) {
+      this.samples = samples;
+    }
 
     @Override
     public void process(Pair<String, Iterable<Variant>> input,
@@ -174,10 +181,12 @@ public final class CrunchUtils {
       List<FlatVariantCall> flatVariants = Lists.newArrayList();
       for (Variant variant: input.second()) {
         for (Call call : variant.getCalls()) {
-          flatVariants.add(flatten(variant, call));
-          if ((++count % 1000000) == 0) {
-            LOG.info("Flattened {} variants", count);
-            getContext().progress();
+          if (samples == null || samples.contains(call.getCallSetId())) {
+            flatVariants.add(flatten(variant, call));
+            if ((++count % 1000000) == 0) {
+              LOG.info("Flattened {} variants", count);
+              getContext().progress();
+            }
           }
         }
       }

@@ -23,7 +23,9 @@ import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.fs.Path;
 import org.ga4gh.models.FlatVariantCall;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.contrib.java.lang.system.SystemOutRule;
 import parquet.avro.AvroParquetReader;
 
 import static org.junit.Assert.assertEquals;
@@ -31,7 +33,10 @@ import static org.junit.Assert.assertTrue;
 
 public class LoadVariantsToolIT {
 
-  LoadVariantsTool tool;
+  private LoadVariantsTool tool;
+
+  @Rule
+  public final SystemOutRule systemOutRule = new SystemOutRule().enableLog();
 
   @Before
   public void setUp() {
@@ -44,14 +49,16 @@ public class LoadVariantsToolIT {
   public void testMissingPaths() throws Exception {
     int exitCode = tool.run(new String[0]);
     assertEquals(1, exitCode);
-    // TODO: verify output
+    assertTrue(systemOutRule.getLog().startsWith(
+        "Usage: <main class> [options] <input-path> <output-path>"));
   }
 
   @Test
   public void testInvalidOption() throws Exception {
     int exitCode = tool.run(new String[]{"--invalid", "blah", "foo", "bar"});
     assertEquals(1, exitCode);
-    // TODO: verify output
+    assertTrue(systemOutRule.getLog().startsWith(
+        "Usage: <main class> [options] <input-path> <output-path>"));
   }
 
   @Test
@@ -72,12 +79,7 @@ public class LoadVariantsToolIT {
         "variants_flat_locuspart/chr=1/pos=0/sample_group=default");
     assertTrue(partition1.exists());
 
-    File[] dataFiles = partition1.listFiles(new FileFilter() {
-      @Override
-      public boolean accept(File pathname) {
-        return !pathname.getName().startsWith(".");
-      }
-    });
+    File[] dataFiles = partition1.listFiles(new HiddenFileFilter());
 
     assertEquals(1, dataFiles.length);
     assertTrue(dataFiles[0].getName().endsWith(".parquet"));
@@ -127,12 +129,7 @@ public class LoadVariantsToolIT {
         "variants_flat_locuspart/chr=1/pos=0/sample_group=default");
     assertTrue(partition.exists());
 
-    File[] dataFiles = partition.listFiles(new FileFilter() {
-      @Override
-      public boolean accept(File pathname) {
-        return !pathname.getName().startsWith(".");
-      }
-    });
+    File[] dataFiles = partition.listFiles(new HiddenFileFilter());
 
     assertEquals(1, dataFiles.length);
     assertTrue(dataFiles[0].getName().endsWith(".parquet"));
@@ -152,7 +149,7 @@ public class LoadVariantsToolIT {
     assertEquals(0, flat1.getGenotype1().intValue());
     assertEquals(1, flat1.getGenotype2().intValue());
 
-    checkSorted(dataFiles[0]);
+    checkSorted(dataFiles[0], 15);
   }
 
   @Test
@@ -174,12 +171,7 @@ public class LoadVariantsToolIT {
         "variants_flat_locuspart/chr=1/pos=0/sample_group=default");
     assertTrue(partition.exists());
 
-    File[] dataFiles = partition.listFiles(new FileFilter() {
-      @Override
-      public boolean accept(File pathname) {
-        return !pathname.getName().startsWith(".");
-      }
-    });
+    File[] dataFiles = partition.listFiles(new HiddenFileFilter());
 
     assertEquals(1, dataFiles.length);
     assertTrue(dataFiles[0].getName().endsWith(".parquet"));
@@ -199,7 +191,49 @@ public class LoadVariantsToolIT {
     assertEquals(0, flat1.getGenotype1().intValue());
     assertEquals(1, flat1.getGenotype2().intValue());
 
-    checkSorted(dataFiles[0]);
+    checkSorted(dataFiles[0], 15);
+  }
+
+  @Test
+  public void testRestrictSamples() throws Exception {
+
+    String baseDir = "target/datasets";
+
+    FileUtil.fullyDelete(new File(baseDir));
+
+    String sampleGroup = "default";
+    String input = "datasets/variants_vcf";
+    String output = "target/datasets/variants_flat_locuspart";
+
+    int exitCode = tool.run(new String[]{"--sample-group", sampleGroup,
+        "--samples", "NA12878,NA12892", input, output});
+
+    assertEquals(0, exitCode);
+    File partition = new File(baseDir,
+        "variants_flat_locuspart/chr=1/pos=0/sample_group=default");
+    assertTrue(partition.exists());
+
+    File[] dataFiles = partition.listFiles(new HiddenFileFilter());
+
+    assertEquals(1, dataFiles.length);
+    assertTrue(dataFiles[0].getName().endsWith(".parquet"));
+
+    AvroParquetReader<FlatVariantCall> parquetReader =
+        new AvroParquetReader<>(new Path(dataFiles[0].toURI()));
+
+    // first record has first sample (call set) ID
+    FlatVariantCall flat1 = parquetReader.read();
+    assertEquals(".", flat1.getId());
+    assertEquals("1", flat1.getReferenceName());
+    assertEquals(14396L, flat1.getStart().longValue());
+    assertEquals(14400L, flat1.getEnd().longValue());
+    assertEquals("CTGT", flat1.getReferenceBases());
+    assertEquals("C", flat1.getAlternateBases1());
+    assertEquals("NA12878", flat1.getCallSetId());
+    assertEquals(0, flat1.getGenotype1().intValue());
+    assertEquals(1, flat1.getGenotype2().intValue());
+
+    checkSorted(dataFiles[0], 10);
   }
 
   @Test
@@ -222,12 +256,7 @@ public class LoadVariantsToolIT {
         "variants_flat_locuspart_gvcf/chr=20/pos=10000000/sample_group=sample1");
     assertTrue(partition.exists());
 
-    File[] dataFiles = partition.listFiles(new FileFilter() {
-      @Override
-      public boolean accept(File pathname) {
-        return !pathname.getName().startsWith(".");
-      }
-    });
+    File[] dataFiles = partition.listFiles(new HiddenFileFilter());
 
     assertEquals(1, dataFiles.length);
     assertTrue(dataFiles[0].getName().endsWith(".parquet"));
@@ -247,15 +276,18 @@ public class LoadVariantsToolIT {
     assertEquals(0, flat1.getGenotype1().intValue());
     assertEquals(1, flat1.getGenotype2().intValue());
 
-    checkSorted(dataFiles[0]);
+    checkSorted(dataFiles[0], 30);
   }
 
-  private void checkSorted(File file) throws IOException {
+  private void checkSorted(File file, int expectedCount) throws IOException {
     // check records are sorted by sample id, then start position
     AvroParquetReader<FlatVariantCall> parquetReader =
         new AvroParquetReader<>(new Path(file.toURI()));
 
+    int actualCount = 0;
+
     FlatVariantCall flat1 = parquetReader.read();
+    actualCount++;
 
     String previousCallSetId = flat1.getCallSetId().toString();
     Long previousStart = flat1.getStart();
@@ -265,7 +297,6 @@ public class LoadVariantsToolIT {
         break;
       }
       String callSetId = flat.getCallSetId().toString();
-      String ref = flat1.getReferenceName().toString();
       Long start = flat1.getStart();
       assertTrue("Should be sorted by callSetId",
           previousCallSetId.compareTo(callSetId) <= 0);
@@ -277,6 +308,16 @@ public class LoadVariantsToolIT {
 
       previousCallSetId = callSetId;
       previousStart = start;
+      actualCount++;
+    }
+
+    assertEquals(expectedCount, actualCount);
+  }
+
+  private static class HiddenFileFilter implements FileFilter {
+    @Override
+    public boolean accept(File pathname) {
+      return !pathname.getName().startsWith(".");
     }
   }
 }
