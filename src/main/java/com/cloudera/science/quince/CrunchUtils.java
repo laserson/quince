@@ -47,30 +47,47 @@ public final class CrunchUtils {
 
   public static PTable<String, FlatVariantCall> partitionAndSortUsingShuffle(
       PCollection<Variant> records, long segmentSize, String sampleGroup, Set<String> samples,
-      int numReducers) {
+      boolean variantsOnly, int numReducers) {
     // flatten variants
     PCollection<FlatVariantCall> flatRecords = records.parallelDo(
-        new FlattenVariantFn(samples), Avros.specifics(FlatVariantCall.class));
-    // group by partition key (table key), then prepare for sorting by secondary key,
-    // which is the sample ID and position (first element in value pair)
-    PTable<String, Pair<Pair<String, Long>, FlatVariantCall>> keyedRecords =
-        flatRecords.parallelDo(
-            new ExtractSecondaryKeyFromFlatVariantCallFn(segmentSize, sampleGroup),
-            tableOf(strings(), pairs(pairs(strings(), longs()), flatRecords.getPType())));
-    // do the sort, and extract the partition key and full record
-    PTable<String, FlatVariantCall> partitionedAndSortedRecords =
-        SecondarySort.sortAndApply(keyedRecords, new ExtractEntityFn(),
-            tableOf(strings(), Avros.specifics(FlatVariantCall.class)), numReducers);
-    return partitionedAndSortedRecords;
+        new FlattenVariantFn(samples, variantsOnly), Avros.specifics(FlatVariantCall.class));
+
+    if (variantsOnly) {
+      // group by partition key (table key), then prepare for sorting by secondary key,
+      // which is the position (first element in value pair)
+      PTable<String, Pair<Long, FlatVariantCall>> keyedRecords =
+          flatRecords.parallelDo(
+              new ExtractKeysFromVariantOnlyFn(segmentSize, sampleGroup),
+              tableOf(strings(), pairs(longs(), flatRecords.getPType())));
+      // do the sort, and extract the partition key and full record
+      @SuppressWarnings("unchecked")
+      PTable<String, FlatVariantCall> partitionedAndSortedRecords =
+          SecondarySort.sortAndApply(keyedRecords, new ExtractEntityFn(),
+              tableOf(strings(), Avros.specifics(FlatVariantCall.class)), numReducers);
+      return partitionedAndSortedRecords;
+    } else {
+      // group by partition key (table key), then prepare for sorting by secondary key,
+      // which is the sample ID and position (first element in value pair)
+      PTable<String, Pair<Pair<String, Long>, FlatVariantCall>> keyedRecords =
+          flatRecords.parallelDo(
+              new ExtractKeysFromFlatVariantCallFn(segmentSize, sampleGroup),
+              tableOf(strings(), pairs(pairs(strings(), longs()), flatRecords.getPType())));
+      // do the sort, and extract the partition key and full record
+      @SuppressWarnings("unchecked")
+      PTable<String, FlatVariantCall> partitionedAndSortedRecords =
+          SecondarySort.sortAndApply(keyedRecords, new ExtractEntityFn(),
+              tableOf(strings(), Avros.specifics(FlatVariantCall.class)), numReducers);
+      return partitionedAndSortedRecords;
+    }
   }
 
   public static PTable<String, FlatVariantCall> partitionAndSortReduceSide(
       PCollection<Variant> records, long segmentSize, String sampleGroup, Set<String> samples,
-      int numReducers) {
+      boolean variantsOnly, int numReducers) {
     return records
         .by(new ExtractPartitionKeyFromVariantFn(segmentSize, sampleGroup), strings())
         .groupByKey(numReducers)
-        .parallelDo(new FlattenAndSortVariantsFn(samples),
+        .parallelDo(new FlattenAndSortVariantsFn(samples, variantsOnly),
             tableOf(strings(), Avros.specifics(FlatVariantCall.class)));
   }
 
@@ -100,12 +117,12 @@ public final class CrunchUtils {
    * Turns a variant call into a (partition key, (secondary key, variant call)) pair,
    * where the secondary key is a (sample ID, position) pair.
    */
-  private static final class ExtractSecondaryKeyFromFlatVariantCallFn
+  private static final class ExtractKeysFromFlatVariantCallFn
       extends MapFn<FlatVariantCall, Pair<String, Pair<Pair<String, Long>, FlatVariantCall>>> {
     private long segmentSize;
     private String sampleGroup;
 
-    private ExtractSecondaryKeyFromFlatVariantCallFn(long segmentSize, String sampleGroup) {
+    private ExtractKeysFromFlatVariantCallFn(long segmentSize, String sampleGroup) {
       this.segmentSize = segmentSize;
       this.sampleGroup = sampleGroup;
     }
@@ -117,6 +134,27 @@ public final class CrunchUtils {
       Pair<String, Long> secondaryKey = Pair.of(input.getCallSetId().toString(), input
           .getStart());
       return Pair.of(partitionKey, Pair.of(secondaryKey, input));
+    }
+  }
+
+  /*
+   * Turns a variant call into a (partition key, (position, variant call)) pair.
+   */
+  private static final class ExtractKeysFromVariantOnlyFn
+      extends MapFn<FlatVariantCall, Pair<String, Pair<Long, FlatVariantCall>>> {
+    private long segmentSize;
+    private String sampleGroup;
+
+    private ExtractKeysFromVariantOnlyFn(long segmentSize, String sampleGroup) {
+      this.segmentSize = segmentSize;
+      this.sampleGroup = sampleGroup;
+    }
+
+    @Override
+    public Pair<String, Pair<Long, FlatVariantCall>> map(FlatVariantCall
+        input) {
+      String partitionKey = extractPartitionKey(input, segmentSize, sampleGroup);
+      return Pair.of(partitionKey, Pair.of(input.getStart(), input));
     }
   }
 
@@ -143,15 +181,15 @@ public final class CrunchUtils {
    * Turns a (partition key, (secondary key, flat variant call)) pair into a
    * (partition key, flat variant call) pair.
    */
-  private static final class ExtractEntityFn extends
-      DoFn<Pair<String, Iterable<Pair<Pair<String, Long>, FlatVariantCall>>>,
+  private static final class ExtractEntityFn<T> extends
+      DoFn<Pair<String, Iterable<Pair<T, FlatVariantCall>>>,
           Pair<String, FlatVariantCall>> {
 
     @Override
-    public void process(Pair<String, Iterable<Pair<Pair<String, Long>, FlatVariantCall>>> input,
+    public void process(Pair<String, Iterable<Pair<T, FlatVariantCall>>> input,
         Emitter<Pair<String, FlatVariantCall>> emitter) {
       String partitionKey = input.first();
-      for (Pair<Pair<String, Long>, FlatVariantCall> pair : input.second()) {
+      for (Pair<T, FlatVariantCall> pair : input.second()) {
         FlatVariantCall variantCall = pair.second();
         emitter.emit(Pair.of(partitionKey, variantCall));
       }
@@ -166,10 +204,12 @@ public final class CrunchUtils {
       DoFn<Pair<String, Iterable<Variant>>,
           Pair<String, FlatVariantCall>> {
 
-    private Set<String> samples;
+    private final Set<String> samples;
+    private final boolean variantsOnly;
 
-    public FlattenAndSortVariantsFn(Set<String> samples) {
+    public FlattenAndSortVariantsFn(Set<String> samples, boolean variantsOnly) {
       this.samples = samples;
+      this.variantsOnly = variantsOnly;
     }
 
     @Override
@@ -180,12 +220,16 @@ public final class CrunchUtils {
       long count = 0;
       List<FlatVariantCall> flatVariants = Lists.newArrayList();
       for (Variant variant: input.second()) {
-        for (Call call : variant.getCalls()) {
-          if (samples == null || samples.contains(call.getCallSetId())) {
-            flatVariants.add(flatten(variant, call));
-            if ((++count % 1000000) == 0) {
-              LOG.info("Flattened {} variants", count);
-              getContext().progress();
+        if (variantsOnly) {
+          flatVariants.add(flatten(variant));
+        } else {
+          for (Call call : variant.getCalls()) {
+            if (samples == null || samples.contains(call.getCallSetId())) {
+              flatVariants.add(flatten(variant, call));
+              if ((++count % 1000000) == 0) {
+                LOG.info("Flattened {} variants", count);
+                getContext().progress();
+              }
             }
           }
         }

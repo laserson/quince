@@ -66,6 +66,10 @@ public class LoadVariantsTool extends Configured implements Tool {
       description="Comma-separated list of samples to include.")
   private String samples;
 
+  @Parameter(names="--variants-only",
+      description="Ignore samples and only load variants.")
+  private boolean variantsOnly;
+
   @Parameter(names="--segment-size",
       description="The number of base pairs in each segment partition.")
   private long segmentSize = 1000000;
@@ -121,9 +125,9 @@ public class LoadVariantsTool extends Configured implements Tool {
     PTable<String, FlatVariantCall> partitioned =
         sortReduceSide ?
         CrunchUtils.partitionAndSortReduceSide(records, segmentSize, sampleGroup,
-            sampleSet, numReducers) :
+            sampleSet, variantsOnly, numReducers) :
         CrunchUtils.partitionAndSortUsingShuffle(records, segmentSize, sampleGroup,
-            sampleSet, numReducers);
+            sampleSet, variantsOnly, numReducers);
 
     try {
       Path outputPath = new Path(outputPathString);

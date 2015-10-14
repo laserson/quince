@@ -25,10 +25,20 @@ import org.ga4gh.models.Variant;
 
 class FlattenVariantFn extends DoFn<Variant, FlatVariantCall> {
 
-  private Set<String> samples;
+  private final Set<String> samples;
+  private final boolean variantsOnly;
 
-  public FlattenVariantFn(Set<String> samples) {
+  public FlattenVariantFn() {
+    this(null, false);
+  }
+
+  public FlattenVariantFn(Set<String> samples, boolean variantsOnly) {
     this.samples = samples;
+    this.variantsOnly = variantsOnly;
+  }
+
+  public static FlatVariantCall flatten(Variant variant) {
+    return flatten(variant, null);
   }
 
   public static FlatVariantCall flatten(Variant variant, Call call) {
@@ -48,23 +58,29 @@ class FlattenVariantFn extends DoFn<Variant, FlatVariantCall> {
     flatVariantCall.setAlleleIds1(get(variant.getAlleleIds(), 0));
     flatVariantCall.setAlleleIds2(get(variant.getAlleleIds(), 1));
     // variant.getInfo(); TODO: ignored for now
-    flatVariantCall.setCallSetId(call.getCallSetId());
-    flatVariantCall.setCallSetName(call.getCallSetName());
-    flatVariantCall.setVariantId(call.getVariantId());
-    flatVariantCall.setGenotype1(get(call.getGenotype(), 0));
-    flatVariantCall.setGenotype2(get(call.getGenotype(), 1));
-    // call.getPhaseset(); TODO: ignored for now
-    flatVariantCall.setGenotypeLikelihood1(get(call.getGenotypeLikelihood(), 0));
-    flatVariantCall.setGenotypeLikelihood2(get(call.getGenotypeLikelihood(), 1));
-    //call.getInfo(); TODO: ignored for now
+    if (call != null) {
+      flatVariantCall.setCallSetId(call.getCallSetId());
+      flatVariantCall.setCallSetName(call.getCallSetName());
+      flatVariantCall.setVariantId(call.getVariantId());
+      flatVariantCall.setGenotype1(get(call.getGenotype(), 0));
+      flatVariantCall.setGenotype2(get(call.getGenotype(), 1));
+      // call.getPhaseset(); TODO: ignored for now
+      flatVariantCall.setGenotypeLikelihood1(get(call.getGenotypeLikelihood(), 0));
+      flatVariantCall.setGenotypeLikelihood2(get(call.getGenotypeLikelihood(), 1));
+      //call.getInfo(); TODO: ignored for now
+    }
     return flatVariantCall;
   }
 
   @Override
   public void process(Variant variant, Emitter<FlatVariantCall> emitter) {
-    for (Call call : variant.getCalls()) {
-      if (samples == null || samples.contains(call.getCallSetId())) {
-        emitter.emit(flatten(variant, call));
+    if (variantsOnly) {
+      emitter.emit(flatten(variant));
+    } else {
+      for (Call call : variant.getCalls()) {
+        if (samples == null || samples.contains(call.getCallSetId())) {
+          emitter.emit(flatten(variant, call));
+        }
       }
     }
   }

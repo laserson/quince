@@ -29,6 +29,7 @@ import org.junit.contrib.java.lang.system.SystemOutRule;
 import parquet.avro.AvroParquetReader;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public class LoadVariantsToolIT {
@@ -149,7 +150,7 @@ public class LoadVariantsToolIT {
     assertEquals(0, flat1.getGenotype1().intValue());
     assertEquals(1, flat1.getGenotype2().intValue());
 
-    checkSorted(dataFiles[0], 15);
+    checkSortedBySampleAndStart(dataFiles[0], 15);
   }
 
   @Test
@@ -191,7 +192,7 @@ public class LoadVariantsToolIT {
     assertEquals(0, flat1.getGenotype1().intValue());
     assertEquals(1, flat1.getGenotype2().intValue());
 
-    checkSorted(dataFiles[0], 15);
+    checkSortedBySampleAndStart(dataFiles[0], 15);
   }
 
   @Test
@@ -233,7 +234,47 @@ public class LoadVariantsToolIT {
     assertEquals(0, flat1.getGenotype1().intValue());
     assertEquals(1, flat1.getGenotype2().intValue());
 
-    checkSorted(dataFiles[0], 10);
+    checkSortedBySampleAndStart(dataFiles[0], 10);
+  }
+
+  @Test
+  public void testVariantsOnly() throws Exception {
+
+    String baseDir = "target/datasets";
+
+    FileUtil.fullyDelete(new File(baseDir));
+
+    String input = "datasets/variants_vcf";
+    String output = "target/datasets/variants_flat_locuspart";
+
+    int exitCode = tool.run(new String[]{"--variants-only", input, output});
+
+    assertEquals(0, exitCode);
+    File partition = new File(baseDir,
+        "variants_flat_locuspart/chr=1/pos=0/sample_group=default");
+    assertTrue(partition.exists());
+
+    File[] dataFiles = partition.listFiles(new HiddenFileFilter());
+
+    assertEquals(1, dataFiles.length);
+    assertTrue(dataFiles[0].getName().endsWith(".parquet"));
+
+    AvroParquetReader<FlatVariantCall> parquetReader =
+        new AvroParquetReader<>(new Path(dataFiles[0].toURI()));
+
+    // first record has no sample (call set)
+    FlatVariantCall flat1 = parquetReader.read();
+    assertEquals(".", flat1.getId());
+    assertEquals("1", flat1.getReferenceName());
+    assertEquals(14396L, flat1.getStart().longValue());
+    assertEquals(14400L, flat1.getEnd().longValue());
+    assertEquals("CTGT", flat1.getReferenceBases());
+    assertEquals("C", flat1.getAlternateBases1());
+    assertNull(flat1.getCallSetId());
+    assertNull(flat1.getGenotype1());
+    assertNull(flat1.getGenotype2());
+
+    checkSortedByStart(dataFiles[0], 5);
   }
 
   @Test
@@ -276,10 +317,10 @@ public class LoadVariantsToolIT {
     assertEquals(0, flat1.getGenotype1().intValue());
     assertEquals(1, flat1.getGenotype2().intValue());
 
-    checkSorted(dataFiles[0], 30);
+    checkSortedBySampleAndStart(dataFiles[0], 30);
   }
 
-  private void checkSorted(File file, int expectedCount) throws IOException {
+  private void checkSortedBySampleAndStart(File file, int expectedCount) throws IOException {
     // check records are sorted by sample id, then start position
     AvroParquetReader<FlatVariantCall> parquetReader =
         new AvroParquetReader<>(new Path(file.toURI()));
@@ -307,6 +348,32 @@ public class LoadVariantsToolIT {
       }
 
       previousCallSetId = callSetId;
+      previousStart = start;
+      actualCount++;
+    }
+
+    assertEquals(expectedCount, actualCount);
+  }
+
+  private void checkSortedByStart(File file, int expectedCount) throws IOException {
+    // check records are sorted by sample id, then start position
+    AvroParquetReader<FlatVariantCall> parquetReader =
+        new AvroParquetReader<>(new Path(file.toURI()));
+
+    int actualCount = 0;
+
+    FlatVariantCall flat1 = parquetReader.read();
+    actualCount++;
+
+    Long previousStart = flat1.getStart();
+    while (true) {
+      FlatVariantCall flat = parquetReader.read();
+      if (flat == null) {
+        break;
+      }
+      Long start = flat1.getStart();
+      assertTrue("Should be sorted by start",
+          previousStart.compareTo(start) <= 0);
       previousStart = start;
       actualCount++;
     }
