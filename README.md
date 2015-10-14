@@ -144,7 +144,14 @@ hadoop jar target/quince-0.0.1-SNAPSHOT-job.jar \
 
 ## Deleting data
 
-You can remove all the data with the following commands. _Note that the data will be 
+You can permanently delete the data for a single sample group with the following.
+
+```bash
+hive -e "alter table datasets.variants_flat_locuspart drop partition (sample_group='sample1');"
+hadoop fs -rm -r datasets/variants_flat_locuspart/chr=*/pos=*/sample_group=sample1
+```
+
+To remove the entire dataset, run the following. _Note that the data will be 
 deleted permanently!_
 
 ```bash
