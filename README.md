@@ -142,6 +142,20 @@ hadoop jar target/quince-0.0.1-SNAPSHOT-job.jar \
 ...
 ```
 
+### Controlling parallelism
+
+The `LoadVariantsTool` runs using a single MapReduce shuffle. The number of map tasks is 
+determined by the size of the input, with one map being created for each HDFS block 
+(usually 128MB) of input. Normally there's no reason to change this, but it can be 
+adjusted by setting the Hadoop property `mapred.max.split.size` to a smaller value (in 
+bytes).
+
+The number of reduce tasks is determined automatically (by Crunch) so that each 
+reduce task has approximately 1GB of input (controlled by `crunch.bytes.per.reduce.task`).
+There is a maximum of 500 reducers (although this can be overridden by setting
+`crunch.max.reducers`). Usually the number of reducers chosen works well, but you can 
+override the number used by specifying the `--num-reducers` option.
+
 ## Deleting data
 
 You can permanently delete the data for a single sample group with the following.

@@ -84,6 +84,16 @@ class FlattenVariantFn extends DoFn<Variant, FlatVariantCall> {
       }
     }
   }
+
+  @Override
+  public float scaleFactor() {
+    // If the variant information is of size <i>v</i> (bytes) and the call information is
+    // <i>c</i> then the scale factor is <i>n(v + c) / (v + nc)</i> for <i>n</i> calls.
+    // If we assume that <i>v</i> is <i>2c</i> (as determined by a simple measurement),
+    // then the scale factor works out at about 3.
+    return variantsOnly ? super.scaleFactor() : 3.0f;
+  }
+
   private static <T> T get(List<T> names, int index) {
     if (names == null) {
       return null;

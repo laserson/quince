@@ -113,12 +113,6 @@ public class LoadVariantsTool extends Configured implements Tool {
     Pipeline pipeline = new MRPipeline(getClass(), conf);
     PCollection<Variant> records = FileUtils.readVariants(inputPath, conf, pipeline);
 
-    if (numReducers == 0) {
-      numReducers = conf.getInt("mapreduce.job.reduces", 1);
-      System.out.println("Set num reducers from mapreduce.job.reduces to: " +
-          numReducers);
-    }
-
     Set<String> sampleSet = samples == null ? null :
         Sets.newLinkedHashSet(Splitter.on(',').split(samples));
 
