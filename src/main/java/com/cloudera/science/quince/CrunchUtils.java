@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Set;
 import org.apache.crunch.DoFn;
 import org.apache.crunch.Emitter;
+import org.apache.crunch.GroupingOptions;
 import org.apache.crunch.MapFn;
 import org.apache.crunch.PCollection;
 import org.apache.crunch.PTable;
@@ -50,7 +51,8 @@ public final class CrunchUtils {
       boolean variantsOnly, int numReducers) {
     // flatten variants
     PCollection<FlatVariantCall> flatRecords = records.parallelDo(
-        new FlattenVariantFn(samples, variantsOnly), Avros.specifics(FlatVariantCall.class));
+        new FlattenVariantFn(samples, variantsOnly), Avros.specifics(FlatVariantCall
+            .class));
 
     if (variantsOnly) {
       // group by partition key (table key), then prepare for sorting by secondary key,
@@ -84,9 +86,13 @@ public final class CrunchUtils {
   public static PTable<String, FlatVariantCall> partitionAndSortReduceSide(
       PCollection<Variant> records, long segmentSize, String sampleGroup, Set<String> samples,
       boolean variantsOnly, int numReducers) {
+    GroupingOptions.Builder builder = GroupingOptions.builder();
+    if (numReducers > 0) {
+      builder.numReducers(numReducers);
+    }
     return records
         .by(new ExtractPartitionKeyFromVariantFn(segmentSize, sampleGroup), strings())
-        .groupByKey(numReducers)
+        .groupByKey(builder.build())
         .parallelDo(new FlattenAndSortVariantsFn(samples, variantsOnly),
             tableOf(strings(), Avros.specifics(FlatVariantCall.class)));
   }
